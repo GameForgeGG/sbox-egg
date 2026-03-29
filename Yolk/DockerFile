@@ -32,6 +32,7 @@ ENV CONTAINER_HOME=/home/container \
         TOKEN= \
         SBOX_PROJECT= \
         SBOX_EXTRA_ARGS= \
+        STEAMCMD_BIN= \
         XDG_RUNTIME_DIR=/tmp \
         DISPLAY=:99 \
         PATH=/usr/share/dotnet:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

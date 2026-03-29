@@ -40,8 +40,8 @@ cleanup() {
 trap cleanup EXIT
 
 update_sbox() {
-    local steamcmd_bin=""
     local steamcmd_home="${CONTAINER_HOME}/.steamcmd"
+    local steamcmd_bin="${STEAMCMD_BIN:-${steamcmd_home}/steamcmd.sh}"
     local bootstrap_tar="${steamcmd_home}/steamcmd_linux.tar.gz"
     local -a steam_args
 
@@ -58,6 +58,7 @@ update_sbox() {
         rm -f "${bootstrap_tar}"
 
         if [ -f "${steamcmd_home}/steamcmd.sh" ]; then
+            chmod 0755 "${steamcmd_home}/steamcmd.sh" || true
             steamcmd_bin="${steamcmd_home}/steamcmd.sh"
             return 0
         fi
@@ -66,15 +67,7 @@ update_sbox() {
         return 1
     }
 
-    if [ -x "/opt/steamcmd/steamcmd.sh" ]; then
-        steamcmd_bin="/opt/steamcmd/steamcmd.sh"
-    elif [ -x "/usr/local/bin/steamcmd" ]; then
-        steamcmd_bin="/usr/local/bin/steamcmd"
-    elif command -v steamcmd >/dev/null 2>&1; then
-        steamcmd_bin="$(command -v steamcmd)"
-    fi
-
-    if [ -z "${steamcmd_bin}" ]; then
+    if [ ! -r "${steamcmd_bin}" ]; then
         if ! bootstrap_steamcmd; then
             exit 1
         fi
@@ -94,6 +87,7 @@ update_sbox() {
 
     steam_args+=( validate +quit )
 
+    echo "info: steamcmd path ${steamcmd_bin}" >&2
     if ! bash "${steamcmd_bin}" "${steam_args[@]}"; then
         echo "warn: steamcmd failed from ${steamcmd_bin}; attempting user-local bootstrap retry" >&2
         if ! bootstrap_steamcmd; then
