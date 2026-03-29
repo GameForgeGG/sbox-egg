@@ -30,6 +30,7 @@ SERVER_NAME="${HOSTNAME:-}"
 TOKEN="${TOKEN:-}"
 SBOX_PROJECT="${SBOX_PROJECT:-}"
 SBOX_EXTRA_ARGS="${SBOX_EXTRA_ARGS:-}"
+SBOX_USE_XVFB="${SBOX_USE_XVFB:-0}"
 
 detect_prefix_arch() {
     if [ ! -f "${WINEPREFIX}/system.reg" ]; then
@@ -259,6 +260,7 @@ run_sbox() {
     local -a extra
     local log_file="${1:-}"
     local -a launch_env
+    local rc
 
     if ! resolve_server_exe; then
         echo "fatal: no Windows S&Box server executable found under ${SBOX_INSTALL_DIR}. Verify STEAM_PLATFORM=windows and app/depot content." >&2
@@ -335,12 +337,21 @@ run_sbox() {
         WINE_CPU_TOPOLOGY=2:2
         WINEESYNC=0
         WINEFSYNC=0
+        WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-icu,icuuc=d;iphlpapi=b}"
     )
 
-    if command -v xvfb-run >/dev/null 2>&1; then
-        exec env "${launch_env[@]}" xvfb-run -a wine "${SBOX_SERVER_EXE}" "${args[@]}"
+    if [ "${SBOX_USE_XVFB}" = "1" ] && command -v xvfb-run >/dev/null 2>&1; then
+        echo "info: launching with xvfb-run (SBOX_USE_XVFB=1)" >&2
+        env "${launch_env[@]}" xvfb-run -a wine "${SBOX_SERVER_EXE}" "${args[@]}"
+        rc=$?
+    else
+        echo "info: launching without xvfb-run (dxura-style headless wine)" >&2
+        env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}"
+        rc=$?
     fi
-    exec env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}"
+
+    echo "fatal: sbox-server exited with code ${rc}" >&2
+    exit "${rc}"
 }
 
 ensure_windows_dotnet_runtime() {
