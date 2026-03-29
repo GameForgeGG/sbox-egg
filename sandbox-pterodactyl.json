@@ -5,20 +5,20 @@
         "update_url": null
     },
     "exported_at": "2026-03-29T13:07:16+01:00",
-    "name": "S&box Server (Wine)",
-    "author": "support@gameforge.gg",
-    "description": "S&Box dedicated server via Wine with build-time baked Wine prefix and Windows .NET runtime for stable Pterodactyl startup.",
+    "name": "Sandbox (S&box) Server ",
+    "author": "team@gameforge.gg",
+    "description": "S&Box dedicated server with build-time baked Wine prefix and Windows .NET runtime for stable Pterodactyl startup.",
     "features": [],
     "docker_images": {
         "ghcr.io\/hyberhost\/gameforge-sbox-egg:latest": "ghcr.io\/hyberhost\/gameforge-sbox-egg:latest",
-        "ghcr.io\/hyberhost\/gameforge-sbox-egg:main": "ghcr.io\/hyberhost\/gameforge-sbox-egg:main"
+        "ghcr.io\/hyberhost\/gameforge-sbox-egg:main": "ghcr.io\/hyberhost\/gameforge-sbox-egg:latest"
     },
     "file_denylist": [],
     "startup": "start-sbox",
     "config": {
         "files": "{}",
-        "startup": "{\r\n    \"done\": \"Loading game\"\r\n}",
-        "logs": "{}",
+        "startup": "{\r\n    \"done\": \"Loading game|Server started\"\r\n}",
+        "logs": "{\r\n    \"custom\": false,\r\n    \"location\": \"logs\/sbox-*.log\"\r\n}",
         "stop": "^C"
     },
     "scripts": {
@@ -107,6 +107,56 @@
             "user_viewable": true,
             "user_editable": true,
             "rules": "nullable|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Windows .NET Version",
+            "description": "Windows .NET runtime version to install (e.g., 10.0.0, 8.0.0)",
+            "env_variable": "WIN_DOTNET_VERSION",
+            "default_value": "10.0.0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Wine Debug Level",
+            "description": "Wine debug output level (all,-all,warn,err,fixme,trace)",
+            "env_variable": "WINEDEBUG",
+            "default_value": "-all",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Log Rotation Keep",
+            "description": "Number of old S&Box logs to keep (0 = unlimited)",
+            "env_variable": "SBOX_LOG_KEEP",
+            "default_value": "10",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|min:0|max:100",
+            "field_type": "text"
+        },
+        {
+            "name": ".NET JIT Tier Compilation",
+            "description": "Enable tiered compilation for .NET performance (0=off, 1=on)",
+            "env_variable": "DOTNET_TieredCompilation",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": ".NET ReadyToRun",
+            "description": "Enable .NET ReadyToRun compilation (0=disabled for consistency)",
+            "env_variable": "DOTNET_ReadyToRun",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:0,1",
             "field_type": "text"
         }
     ]

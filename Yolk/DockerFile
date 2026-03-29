@@ -75,7 +75,9 @@ RUN mkdir -p /work/steamcmd /work/server \
          +login anonymous \
          +app_update 1892930 validate \
          +quit \
-     && rm -rf /work/steamcmd
+     && rm /work/steamcmd/steamcmd_linux.tar.gz
+# Note: We intentionally keep /work/steamcmd (only the tarball is removed)
+# so it can be reused/copied later as a SteamCMD template directory.
 
 # Verify the .NET host was installed (warn only, don't fail build).
 RUN if ! find /work/wineprefix/drive_c -name hostfxr.dll 2>/dev/null | grep -q .; then \
@@ -107,12 +109,14 @@ ENV CONTAINER_HOME=/home/container \
     # Pterodactyl /home/container volume mount).  Entrypoint copies this to
     # WINEPREFIX on first start if .wine is absent.
     SBOX_BAKED_WINEPREFIX=/opt/sbox-wine-prefix \
+    SBOX_BAKED_STEAMCMD_TEMPLATE=/opt/sbox-steamcmd-template \
     SBOX_BAKED_SERVER_TEMPLATE=/opt/sbox-server-template \
     SBOX_APP_ID=1892930 \
     SBOX_INSTALL_DIR=/home/container/sbox \
     SBOX_SERVER_EXE=/home/container/sbox/sbox-server.exe \
     SBOX_AUTO_UPDATE=0 \
     SBOX_BRANCH= \
+    SBOX_LOG_KEEP=10 \
     STEAM_PLATFORM=windows \
     # Runtime winetricks / .NET provisioning — disabled by default because the
     # Wine prefix is already fully baked into the image.
@@ -123,6 +127,11 @@ ENV CONTAINER_HOME=/home/container \
     WIN_DOTNET_VERSION=10.0.0 \
     WIN_DOTNET_INSTALL_METHOD=installer \
     WIN_DOTNET_ROOT=C:\\Program\ Files\\dotnet \
+    # .NET and Wine performance tuning
+    DOTNET_EnableWriteXorExecute=0 \
+    DOTNET_TieredCompilation=0 \
+    DOTNET_ReadyToRun=0 \
+    DOTNET_ZapDisable=1 \
     GAME= \
     MAP= \
     HOSTNAME= \
@@ -153,6 +162,13 @@ RUN mkdir -p \
 # entrypoint will copy this to /home/container/.wine on the first start.
 COPY --from=builder /work/wineprefix /opt/sbox-wine-prefix
 COPY --from=builder /work/server /opt/sbox-server-template
+COPY --from=builder /work/steamcmd /opt/sbox-steamcmd-template
+
+# Fix permissions on copied templates so non-root user can access them.
+# Pterodactyl typically runs containers as uid 999, so ensure these are readable.
+RUN chmod -R u+rwX,g+rX,o+rX /opt/sbox-wine-prefix /opt/sbox-server-template /opt/sbox-steamcmd-template && \
+    find /opt/sbox-steamcmd-template -type f -name '*.sh' -exec chmod +x {} \; && \
+    chmod +x /opt/sbox-steamcmd-template/steamcmd.sh || true
 
 # Pre-initialize the Wine prefix as root so permissions are set correctly
 # This avoids issues when Pterodactyl non-root user tries to copy later.
