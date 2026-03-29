@@ -1,0 +1,97 @@
+# Sandbox (S&Box) Egg for Ptrodactyl
+# Copyright (c) 2026 Steven A. Smith
+
+FROM --platform=$TARGETOS/$TARGETARCH debian:bookworm-slim
+
+LABEL author="Steven A. Smith" maintainer="steven.smith@hyberhost.com"
+LABEL description="Sandbox (S&Box) Egg for Ptrodactyl" version="1.0" license="MIT"
+LABEL org.opencontainers.image.authors="Steven A. Smith" \
+          org.opencontainers.image.description="Sandbox (S&Box) Egg for Ptrodactyl" \
+          org.opencontainers.image.licenses="MIT" \
+          org.opencontainers.image.source="https://github.com/HyberHost/GameForge-sbox-egg"
+
+ARG PUID=999
+ARG PGID=999
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV CONTAINER_HOME=/home/container \
+        HOME=/home/container \
+        WINEPREFIX=/home/container/.wine \
+        WINEARCH=win32 \
+        WINEDEBUG=-all \
+        WINEDLLOVERRIDES=icu,icuuc=d \
+        DOTNET_ROOT=/usr/share/dotnet \
+        SBOX_APP_ID=1892930 \
+        SBOX_INSTALL_DIR=/home/container/sbox \
+        SBOX_SERVER_EXE=/home/container/sbox/sbox-server.exe \
+        SBOX_AUTO_UPDATE=1 \
+        SBOX_BRANCH= \
+        GAME= \
+        MAP= \
+        HOSTNAME= \
+        TOKEN= \
+        SBOX_PROJECT= \
+        SBOX_EXTRA_ARGS= \
+        XDG_RUNTIME_DIR=/tmp \
+        DISPLAY=:99 \
+        PATH=/usr/share/dotnet:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN dpkg --add-architecture i386 \
+        && apt-get update \
+        && apt-get install -y --no-install-recommends \
+           bash \
+           ca-certificates \
+           curl \
+           gnupg2 \
+                 tar \
+           tini \
+           wget \
+        && wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb \
+        && dpkg -i /tmp/packages-microsoft-prod.deb \
+        && rm -f /tmp/packages-microsoft-prod.deb \
+        && apt-get update \
+        && apt-get install -y --no-install-recommends \
+           cabextract \
+           dotnet-runtime-10.0 \
+           libgcc-s1 \
+           libgcc-s1:i386 \
+           libpulse0 \
+           libpulse0:i386 \
+           libstdc++6 \
+           libstdc++6:i386 \
+           libx11-6 \
+           libx11-6:i386 \
+           libxext6 \
+           libxext6:i386 \
+           wine \
+           wine32 \
+           wine64 \
+           winbind \
+           xvfb \
+        && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/steamcmd \
+        && wget -qO /tmp/steamcmd_linux.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+        && tar -xzf /tmp/steamcmd_linux.tar.gz -C /opt/steamcmd \
+        && rm -f /tmp/steamcmd_linux.tar.gz \
+        && ln -sf /opt/steamcmd/steamcmd.sh /usr/local/bin/steamcmd
+
+RUN if ! getent group "${PGID}" >/dev/null; then groupadd --gid "${PGID}" container; fi \
+        && if ! id -u "${PUID}" >/dev/null 2>&1; then useradd --uid "${PUID}" --gid "${PGID}" --home-dir "${CONTAINER_HOME}" --create-home --shell /bin/bash container; fi \
+        && mkdir -p \
+           /home/container/.wine \
+           /home/container/data \
+           /home/container/download \
+           /home/container/logs \
+           /home/container/sbox \
+        && chown -R "${PUID}:${PGID}" /home/container \
+        && chmod 1777 /tmp
+
+COPY --chown=999:999 Yolk/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+WORKDIR /home/container
+USER 999:999
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+CMD ["start-sbox"]
