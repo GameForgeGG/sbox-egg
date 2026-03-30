@@ -5,7 +5,6 @@ CONTAINER_HOME="${CONTAINER_HOME:-/home/container}"
 WINEPREFIX="${WINEPREFIX:-/home/container/.wine}"
 BAKED_WINEPREFIX="${SBOX_BAKED_WINEPREFIX:-/opt/sbox-wine-prefix}"
 BAKED_SERVER_TEMPLATE="${SBOX_BAKED_SERVER_TEMPLATE:-/opt/sbox-server-template}"
-BAKED_STEAMCMD_TEMPLATE="${SBOX_BAKED_STEAMCMD_TEMPLATE:-/opt/sbox-steamcmd-template}"
 
 SBOX_INSTALL_DIR="${SBOX_INSTALL_DIR:-/home/container/sbox}"
 SBOX_SERVER_EXE="${SBOX_SERVER_EXE:-${SBOX_INSTALL_DIR}/sbox-server.exe}"
@@ -32,17 +31,12 @@ seed_runtime_files() {
 
     if [ ! -f "${WINEPREFIX}/system.reg" ] && [ -d "${BAKED_WINEPREFIX}/drive_c" ]; then
         echo "info: seeding Wine prefix from ${BAKED_WINEPREFIX}" >&2
-        cp -a "${BAKED_WINEPREFIX}/." "${WINEPREFIX}/"
+        cp -r "${BAKED_WINEPREFIX}/." "${WINEPREFIX}/"
     fi
 
     if [ ! -f "${SBOX_SERVER_EXE}" ] && [ -d "${BAKED_SERVER_TEMPLATE}" ]; then
         echo "info: seeding S&Box files from ${BAKED_SERVER_TEMPLATE}" >&2
         cp -r "${BAKED_SERVER_TEMPLATE}/." "${SBOX_INSTALL_DIR}/"
-    fi
-
-    if [ ! -r "${CONTAINER_HOME}/.steamcmd/steamcmd.sh" ] && [ -d "${BAKED_STEAMCMD_TEMPLATE}" ]; then
-        echo "info: seeding SteamCMD from ${BAKED_STEAMCMD_TEMPLATE}" >&2
-        cp -a "${BAKED_STEAMCMD_TEMPLATE}/." "${CONTAINER_HOME}/.steamcmd/"
     fi
 
     chmod +x "${CONTAINER_HOME}/.steamcmd/steamcmd.sh" 2>/dev/null || true
@@ -51,12 +45,12 @@ seed_runtime_files() {
 
 update_sbox() {
     local steamcmd_home="${CONTAINER_HOME}/.steamcmd"
-    local steamcmd_bin="${STEAMCMD_BIN:-${steamcmd_home}/steamcmd.sh}"
+    local steamcmd_bin="${STEAMCMD_BIN:-}"
     local bootstrap_tar="${steamcmd_home}/steamcmd_linux.tar.gz"
     local steamcmd_linux32="${steamcmd_home}/linux32/steamcmd"
     local compat_loader="/opt/steam-compat/lib/ld-linux.so.2"
     local compat_lib_path="/opt/steam-compat/lib/i386-linux-gnu:/opt/steam-compat/usr/lib/i386-linux-gnu:/opt/steam-compat/lib"
-    local native_steamcmd=""
+    local bundled_steamcmd="${steamcmd_home}/steamcmd.sh"
     local steamcmd_mode="script"
     local -a steam_args
     local -a fallback_args
@@ -64,28 +58,24 @@ update_sbox() {
 
     mkdir -p "${steamcmd_home}" "${SBOX_INSTALL_DIR}"
 
-    if [ ! -r "${steamcmd_bin}" ]; then
+    # Prefer native Alpine steamcmd when available; bundled linux32 steamcmd
+    # often fails in musl runtimes unless glibc compatibility is in use.
+    if [ -z "${steamcmd_bin}" ]; then
         if [ -x "/usr/bin/steamcmd" ]; then
-            native_steamcmd="/usr/bin/steamcmd"
+            steamcmd_bin="/usr/bin/steamcmd"
         elif [ -x "/usr/games/steamcmd" ]; then
-            native_steamcmd="/usr/games/steamcmd"
-        fi
-
-        if [ -n "${native_steamcmd}" ]; then
-            cat > "${steamcmd_home}/steamcmd.sh" <<EOF
-#!/usr/bin/env bash
-exec "${native_steamcmd}" "\$@"
-EOF
-            chmod 0755 "${steamcmd_home}/steamcmd.sh" || true
+            steamcmd_bin="/usr/games/steamcmd"
         else
-            wget -qO "${bootstrap_tar}" https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
-            tar -xzf "${bootstrap_tar}" -C "${steamcmd_home}"
-            rm -f "${bootstrap_tar}"
-            chmod 0755 "${steamcmd_home}/steamcmd.sh" || true
-            chmod 0755 "${steamcmd_linux32}" 2>/dev/null || true
+            steamcmd_bin="${bundled_steamcmd}"
         fi
+    fi
 
-        steamcmd_bin="${steamcmd_home}/steamcmd.sh"
+    if [ ! -r "${steamcmd_bin}" ] && [ "${steamcmd_bin}" = "${bundled_steamcmd}" ]; then
+        wget -qO "${bootstrap_tar}" https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz
+        tar -xzf "${bootstrap_tar}" -C "${steamcmd_home}"
+        rm -f "${bootstrap_tar}"
+        chmod 0755 "${bundled_steamcmd}" || true
+        chmod 0755 "${steamcmd_linux32}" 2>/dev/null || true
     fi
 
     if [[ "${steamcmd_bin}" = *.sh ]]; then
@@ -100,11 +90,11 @@ EOF
             if "${compat_loader}" --library-path "${compat_lib_path}" "${steamcmd_linux32}" +quit >/dev/null 2>&1; then
                 steamcmd_mode="compat"
             else
-                echo "warn: SteamCMD is not executable in this runtime; skipping auto-update" >&2
+                echo "warn: SteamCMD runtime probe failed for '${steamcmd_bin}'; skipping auto-update" >&2
                 return 0
             fi
         else
-            echo "warn: SteamCMD is not executable in this runtime; skipping auto-update" >&2
+            echo "warn: SteamCMD runtime probe failed for '${steamcmd_bin}'; skipping auto-update" >&2
             return 0
         fi
     fi

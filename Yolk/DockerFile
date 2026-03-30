@@ -92,9 +92,8 @@ RUN mkdir -p /work/steamcmd /work/server \
                 echo "warn: build-time app download failed for app ${BAKE_SBOX_APP_ID}; runtime update will be used" >&2; \
                 mkdir -p /work/server; \
             fi; \
-        fi
-# Note: We intentionally keep /work/steamcmd (only the tarball is removed)
-# so it can be reused/copied later as a SteamCMD template directory.
+        fi \
+     && rm -rf /work/steamcmd
 
 # Verify the .NET host was installed (warn only, don't fail build).
 RUN if ! find /work/wineprefix/drive_c -name hostfxr.dll 2>/dev/null | grep -q .; then \
@@ -126,7 +125,6 @@ ENV CONTAINER_HOME=/home/container \
     # Pterodactyl /home/container volume mount).  Entrypoint copies this to
     # WINEPREFIX on first start if .wine is absent.
     SBOX_BAKED_WINEPREFIX=/opt/sbox-wine-prefix \
-    SBOX_BAKED_STEAMCMD_TEMPLATE=/opt/sbox-steamcmd-template \
     SBOX_BAKED_SERVER_TEMPLATE=/opt/sbox-server-template \
     SBOX_APP_ID=1892930 \
     SBOX_INSTALL_DIR=/home/container/sbox \
@@ -184,7 +182,6 @@ RUN mkdir -p \
 # entrypoint will copy this to /home/container/.wine on the first start.
 COPY --from=builder /work/wineprefix /opt/sbox-wine-prefix
 COPY --from=builder /work/server /opt/sbox-server-template
-COPY --from=builder /work/steamcmd /opt/sbox-steamcmd-template
 
 # Compatibility runtime for SteamCMD linux32 binary on Alpine/musl.
 COPY --from=builder /lib/ld-linux.so.2 /opt/steam-compat/lib/ld-linux.so.2
@@ -193,9 +190,7 @@ COPY --from=builder /usr/lib/i386-linux-gnu /opt/steam-compat/usr/lib/i386-linux
 
 # Fix permissions on copied templates so non-root user can access them.
 # Pterodactyl typically runs containers as uid 999, so ensure these are readable.
-RUN chmod -R u+rwX,g+rX,o+rX /opt/sbox-wine-prefix /opt/sbox-server-template /opt/sbox-steamcmd-template && \
-    find /opt/sbox-steamcmd-template -type f -name '*.sh' -exec chmod +x {} \; && \
-    chmod +x /opt/sbox-steamcmd-template/steamcmd.sh || true
+RUN chmod -R u+rwX,g+rX,o+rX /opt/sbox-wine-prefix /opt/sbox-server-template
 
 # Pre-initialize the Wine prefix as root so permissions are set correctly
 # This avoids issues when Pterodactyl non-root user tries to copy later.
