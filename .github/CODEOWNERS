@@ -1,0 +1,23 @@
+# GitHub CODEOWNERS
+# Replace placeholder owners below with real users/teams that have write access.
+# Team format: @org/team-name
+
+# Default owner for the entire repository
+* @HyberHost/egg-maintainers
+
+# Runtime/image files
+/Yolk/ @HyberHost/egg-maintainers
+
+# Reference assets
+/ref/ @HyberHost/egg-maintainers
+
+# Shell scripts
+*.sh @HyberHost/egg-maintainers
+
+# Pterodactyl egg/panel config
+/sandbox-pterodactyl.json @HyberHost/egg-maintainers
+
+# GitHub settings and governance files
+/.github/ @HyberHost/management @HyberHost/egg-maintainers
+/CONTRIBUTING.md @HyberHost/management @HyberHost/egg-maintainers
+/README.md @HyberHost/management @HyberHost/egg-maintainers
