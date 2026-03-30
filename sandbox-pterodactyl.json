@@ -89,16 +89,6 @@
             "field_type": "text"
         },
         {
-            "name": "Auto Update",
-            "description": "Set to 1 to run SteamCMD app_update on startup, 0 to skip",
-            "env_variable": "SBOX_AUTO_UPDATE",
-            "default_value": "1",
-            "user_viewable": true,
-            "user_editable": true,
-            "rules": "required|in:0,1",
-            "field_type": "text"
-        },
-        {
             "name": "Branch",
             "description": "Optional Steam beta branch (for example: staging)",
             "env_variable": "SBOX_BRANCH",

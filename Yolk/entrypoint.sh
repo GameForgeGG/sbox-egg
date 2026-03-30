@@ -89,7 +89,6 @@ fi
 seed_runtime_files
 
 if [ "${1:-}" = "" ]; then
-
     run_sbox
 fi
 

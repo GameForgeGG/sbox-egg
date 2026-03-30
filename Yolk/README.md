@@ -5,7 +5,7 @@ This document explains the Docker build and runtime design for the S&Box egg ima
 ## Files
 
 - `DockerFile`: multi-stage build definition.
-- `entrypoint.sh`: runtime orchestration (seed, update, launch).
+- `entrypoint.sh`: runtime orchestration (seed, launch).
 
 ## Build Overview
 
@@ -21,14 +21,6 @@ The image uses two stages:
 2. Runtime stage (`alpine:edge`)
 - Installs runtime packages (Wine, bash, wget, etc.).
 - Copies baked Wine prefix and baked server template only.
-- Does not copy build-stage SteamCMD into final runtime image.
-
-## SteamCMD Separation Model
-
-Current model intentionally separates SteamCMD use cases:
-- Build-time SteamCMD: only used in builder stage for pre-bake.
-- Runtime SteamCMD: executed from `/home/container/.steamcmd/steamcmd.sh` inside Pterodactyl space.
-- If local SteamCMD is missing, runtime downloads SteamCMD into `/home/container/.steamcmd`.
 
 This avoids runtime compatibility issues caused by carrying a builder-baked SteamCMD into Alpine runtime.
 
@@ -54,8 +46,6 @@ docker build --platform linux/amd64 \
 ## Runtime Notes
 
 - Startup entrypoint command is `start-sbox`.
-- Runtime update behavior is controlled by `SBOX_AUTO_UPDATE`.
-- If SteamCMD runtime probe fails, entrypoint logs a warning and skips update instead of crashing startup.
 
 ## Local Validation
 

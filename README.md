@@ -8,14 +8,13 @@ Provide a production-ready Pterodactyl egg that:
 - uses `start-sbox` as startup,
 - supports common server variables from the panel,
 - runs as non-root in container environments,
-- supports SteamCMD app updates at runtime,
 - seeds runtime files from baked templates (Wine prefix and server template).
 
 ## Repository Layout
 
 - `sandbox-pterodactyl.json`: Pterodactyl egg export (import this into your panel).
 - `Yolk/DockerFile`: Docker image build for the egg runtime.
-- `Yolk/entrypoint.sh`: runtime startup/update logic.
+- `Yolk/entrypoint.sh`: runtime startup logic.
 - `ref/`: reference files used during development.
 
 ## Pterodactyl Egg Focus
@@ -32,21 +31,12 @@ Key details:
   - `TOKEN`
   - `SBOX_PROJECT`
   - `SBOX_EXTRA_ARGS`
-  - `SBOX_AUTO_UPDATE`
-  - `SBOX_BRANCH`
 
 ## Runtime Behavior
 
 At container start, `Yolk/entrypoint.sh`:
 1. Seeds Wine and server files from baked templates if missing.
-2. Runs SteamCMD update when `SBOX_AUTO_UPDATE=1` or server binary is missing.
-3. Starts `sbox-server.exe` under Wine with selected startup args.
-
-SteamCMD runtime strategy:
-- Runtime execution path defaults to `/home/container/.steamcmd/steamcmd.sh`.
-- SteamCMD is downloaded/managed in `/home/container/.steamcmd` when missing.
-- Optional override: set `STEAMCMD_BIN` to use a custom path.
-- Build-time SteamCMD is not prebaked into the final runtime image.
+2. Starts `sbox-server.exe` under Wine with selected startup args.
 
 ## Quick Start
 
