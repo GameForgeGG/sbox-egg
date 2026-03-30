@@ -4,6 +4,8 @@ set -euo pipefail
 CONTAINER_HOME="${CONTAINER_HOME:-/home/container}"
 WINEPREFIX="${WINEPREFIX:-/home/container/.wine}"
 BAKED_WINEPREFIX="${SBOX_BAKED_WINEPREFIX:-/opt/sbox-wine-prefix}"
+BAKED_SERVER_TEMPLATE="${SBOX_BAKED_SERVER_TEMPLATE:-/opt/sbox-server-template}"
+BAKED_STEAMCMD_TEMPLATE="${SBOX_BAKED_STEAMCMD_TEMPLATE:-/opt/sbox-steamcmd-template}"
 
 SBOX_INSTALL_DIR="${SBOX_INSTALL_DIR:-/home/container/sbox}"
 SBOX_SERVER_EXE="${SBOX_SERVER_EXE:-${SBOX_INSTALL_DIR}/sbox-server.exe}"
@@ -22,17 +24,39 @@ SBOX_EXTRA_ARGS="${SBOX_EXTRA_ARGS:-}"
 
 STEAM_COMPAT_LOADER="/opt/steam-compat/lib/ld-linux.so.2"
 STEAM_COMPAT_LIB_PATH="/opt/steam-compat/lib/i386-linux-gnu:/opt/steam-compat/usr/lib/i386-linux-gnu:/opt/steam-compat/lib"
+SBOX_PREBAKED_SEEDED=0
 
 if [ -z "${SERVER_NAME}" ] && [ -n "${HOSTNAME:-}" ] && ! [[ "${HOSTNAME}" =~ ^[0-9a-f]{12,64}$ ]]; then
     SERVER_NAME="${HOSTNAME}"
 fi
 
 seed_runtime_files() {
+    local seed_sbox=0
+
+    if [ ! -d "${SBOX_INSTALL_DIR}" ]; then
+        seed_sbox=1
+    elif [ -z "$(find "${SBOX_INSTALL_DIR}" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+        seed_sbox=1
+    fi
+
     mkdir -p "${CONTAINER_HOME}" "${WINEPREFIX}" "${SBOX_INSTALL_DIR}" "${CONTAINER_HOME}/logs" "${CONTAINER_HOME}/data" "${STEAMCMD_DIR}"
 
     if [ ! -f "${WINEPREFIX}/system.reg" ] && [ -d "${BAKED_WINEPREFIX}/drive_c" ]; then
         echo "info: seeding Wine prefix from ${BAKED_WINEPREFIX}" >&2
         cp -r "${BAKED_WINEPREFIX}/." "${WINEPREFIX}/"
+    fi
+
+    if [ "${seed_sbox}" = "1" ] && [ -d "${BAKED_SERVER_TEMPLATE}" ]; then
+        echo "info: seeding S&Box files from ${BAKED_SERVER_TEMPLATE}" >&2
+        cp -r "${BAKED_SERVER_TEMPLATE}/." "${SBOX_INSTALL_DIR}/"
+        SBOX_PREBAKED_SEEDED=1
+    elif [ "${seed_sbox}" = "1" ]; then
+        echo "warn: ${SBOX_INSTALL_DIR} is missing/empty but prebaked template was not found at ${BAKED_SERVER_TEMPLATE}" >&2
+    fi
+
+    if ! steamcmd_installed && [ -d "${BAKED_STEAMCMD_TEMPLATE}" ]; then
+        echo "info: seeding SteamCMD runtime from ${BAKED_STEAMCMD_TEMPLATE}" >&2
+        cp -r "${BAKED_STEAMCMD_TEMPLATE}/." "${STEAMCMD_DIR}/"
     fi
 }
 
@@ -156,7 +180,7 @@ fi
 seed_runtime_files
 
 if [ "${1:-}" = "" ]; then
-    if [ "${SBOX_AUTO_UPDATE}" = "1" ] || [ ! -f "${SBOX_SERVER_EXE}" ]; then
+    if [ "${SBOX_AUTO_UPDATE}" = "1" ] || [ "${SBOX_PREBAKED_SEEDED}" = "1" ] || [ ! -f "${SBOX_SERVER_EXE}" ]; then
         update_sbox
     fi
     run_sbox
