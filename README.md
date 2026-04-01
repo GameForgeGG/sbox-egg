@@ -2,7 +2,7 @@
 
 This repository contains a Pterodactyl egg and container build assets for running an S&Box dedicated server with Wine.
 
-This is working now, We are using it to offer S&Box server hosting, [Looking for a server?](https://gameforge.gg/games/sbox)
+This is now working in production. We use it to offer S&Box server hosting: [Looking for a server?](https://gameforge.gg/games/sbox)
 
 ## Primary Goal
 
@@ -55,5 +55,5 @@ At container start, `Yolk/entrypoint.sh`:
 
 ## Notes for Hosting Providers
 
-While this egg was built for [GameForge](https://gameforge.gg) to sell S&Box, We are move than happy to see other providers use this and are open to pull requests.
+While this egg was built for [GameForge](https://gameforge.gg) to sell S&Box, We are more than happy to see other providers use this and are open to pull requests.
 
