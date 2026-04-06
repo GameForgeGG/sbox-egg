@@ -79,7 +79,7 @@
         },
         {
             "name": "Max Players",
-            "description": "Maximum number of players allowed on the server.",
+            "description": "Maximum number of players allowed on the server. (This depends on gamemode support, setting this may cause issues)",
             "env_variable": "MAX_PLAYERS",
             "default_value": "",
             "user_viewable": true,

@@ -251,9 +251,9 @@ run_steamcmd() {
 
     steamcmd_bin="$(resolve_steamcmd_binary || true)"
 
-    if ! steamcmd_installed; then
-        #log_warn "SteamCMD runtime binary was not found (checked ${STEAMCMD_DIR}/linux32/steamcmd and ${CONTAINER_HOME}/Steam/linux32/steamcmd)"
-        #return 1
+    if [ -z "${steamcmd_bin}" ]; then
+        log_warn "SteamCMD binary not found in expected locations"
+        return 1
     fi
 
     if [ ! -x "${STEAM_COMPAT_LOADER}" ]; then
