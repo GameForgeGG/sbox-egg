@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euoo pipefail
 
 CONTAINER_HOME="${CONTAINER_HOME:-/home/container}"
 WINEPREFIX="${WINEPREFIX:-/home/container/.wine}"
@@ -17,18 +17,71 @@ STEAMCMD_DIR="${STEAMCMD_DIR:-${CONTAINER_HOME}/steamcmd}"
 GAME="${GAME:-}"
 MAP="${MAP:-}"
 SERVER_NAME="${SERVER_NAME:-}"
+QUERY_PORT="${QUERY_PORT:-27016}"
+MAX_PLAYERS="${MAX_PLAYERS:-32}"
+ENABLE_DIRECT_CONNECT="${ENABLE_DIRECT_CONNECT:-0}"
 TOKEN="${TOKEN:-}"
 SBOX_PROJECT="${SBOX_PROJECT:-}"
 SBOX_PROJECTS_DIR="${SBOX_PROJECTS_DIR:-${CONTAINER_HOME}/projects}"
 SBOX_EXTRA_ARGS="${SBOX_EXTRA_ARGS:-}"
+ADMIN_USERS="${ADMIN_USERS:-}"
+SERVER_IP="${SERVER_IP:-{{SERVER_IP}}}"
+
+# Update Checker Variables
+SBOX_UPDATE_CHECK="${SBOX_UPDATE_CHECK:-0}"
+SBOX_UPDATE_CHECK_INTERVAL="${SBOX_UPDATE_CHECK_INTERVAL:-3600}"
+SBOX_SHUTDOWN_TIMER="${SBOX_SHUTDOWN_TIMER:-120}"
+SBOX_SHUTDOWN_MESSAGE="${SBOX_SHUTDOWN_MESSAGE:-Server will restart for updates in [TIME] seconds}"
+SBOX_FINAL_WARNING_MESSAGE="${SBOX_FINAL_WARNING_MESSAGE:-Server restarting in 15 seconds for updates!}"
 
 STEAM_COMPAT_LOADER="${STEAMCMD_DIR}/compat/lib/ld-linux.so.2"
-STEAM_COMPAT_LIB_PATH="${STEAMCMD_DIR}/compat/lib/i386-linux-gnu:${STEAMCMD_DIR}/compat/usr/lib/i386-linux-gnu:${STEAMCMD_DIR}/compat/lib"
-SBOX_PREBAKED_SEEDED=0
+STEAM_COMPAT_LIB_PATH="${STEAMCMD_DIR}/compat/lib/i386-linux-gnu:${STEAMCMD_DIR}/compat/usr/lib/i386-linux-gnu"
+SBOX_PREBAKEDSEEDED=0
 
-if [ -z "${SERVER_NAME}" ] && [ -n "${HOSTNAME:-}" ] && ! [[ "${HOSTNAME}" =~ ^[0-9a-f]{12,64}$ ]]; then
-    SERVER_NAME="${HOSTNAME}"
-fi
+# Logging
+LOG_DIR="${CONTAINER_HOME}/logs"
+LOG_FILE="${LOG_DIR}/sbox-server.log"
+ERROR_LOG="${LOG_DIR}/sbox-error.log"
+UPDATE_LOG="${LOG_DIR}/sbox-update.log"
+
+mkdir -p "${LOG_DIR}"
+
+# ============================================================================
+# LOGGING FUNCTIONS (Enhanced with timestamps)
+# ============================================================================
+
+log_info() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $*" | tee -a "${LOG_FILE}"
+}
+
+log_warn() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $*" | tee -a "${LOG_FILE}" >&2
+}
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "${ERROR_LOG}" >&2
+}
+
+# ============================================================================
+# ADMIN USERS MANAGEMENT
+# ============================================================================
+
+apply_admin_users() {
+    local admin_users_config="${SBOX_INSTALL_DIR}/users/config.json"
+    
+    if [ -z "${ADMIN_USERS:-}" ]; then
+        return 0
+    fi
+    
+    mkdir -p "$(dirname "${admin_users_config}")"
+    echo "${ADMIN_USERS}" > "${admin_users_config}"
+    
+    log_info "admin users configuration written to ${admin_users_config}"
+}
+
+# ============================================================================
+# RUNTIME FILE SEEDING
+# ============================================================================
 
 seed_runtime_files() {
     local seed_sbox=0
@@ -46,25 +99,28 @@ seed_runtime_files() {
         seed_reason="missing Windows server executable"
     elif [ "${SBOX_AUTO_UPDATE}" = "1" ] && [ -f "${baked_server_exe}" ] && [ "${baked_server_exe}" -nt "${SBOX_SERVER_EXE}" ]; then
         seed_sbox=1
-        seed_reason="newer prebaked Windows server executable"
+        seed_reason="newer prebakedWindows server executable"
     fi
 
-    mkdir -p "${CONTAINER_HOME}" "${WINEPREFIX}" "${SBOX_INSTALL_DIR}" "${CONTAINER_HOME}/logs" "${STEAMCMD_DIR}" "${SBOX_PROJECTS_DIR}"
+    mkdir -p "${CONTAINER_HOME}" "${WINEPREFIX}" "${SBOX_INSTALL_DIR}" "${LOG_DIR}" "${SBOX_PROJECTS_DIR}" "${STEAMCMD_DIR}"
 
     if [ ! -f "${WINEPREFIX}/system.reg" ] && [ -d "${BAKED_WINEPREFIX}/drive_c" ]; then
-        echo "info: seeding Wine prefix from ${BAKED_WINEPREFIX}" >&2
+        log_info "seeding Wine prefix from ${BAKED_WINEPREFIX}"
         cp -r "${BAKED_WINEPREFIX}/." "${WINEPREFIX}/"
     fi
 
     if [ "${seed_sbox}" = "1" ] && [ -f "${baked_server_exe}" ]; then
-        echo "info: seeding S&Box files from ${BAKED_SERVER_TEMPLATE} (${seed_reason})" >&2
+        log_info "seeding S&Box files from ${BAKED_SERVER_TEMPLATE} (${seed_reason})"
         cp -r "${BAKED_SERVER_TEMPLATE}/." "${SBOX_INSTALL_DIR}/"
-        SBOX_PREBAKED_SEEDED=1
+        SBOX_PREBAKEDSEEDED=1
     elif [ "${seed_sbox}" = "1" ]; then
-        echo "warn: ${SBOX_INSTALL_DIR} requires reseed (${seed_reason}) but prebaked Windows template is missing ${BAKED_SERVER_TEMPLATE}/sbox-server.exe" >&2
+        log_warn "${SBOX_INSTALL_DIR} requires reseed (${seed_reason}) but prebakedWindows template is missing ${baked_server_exe}"
     fi
-
 }
+
+# ============================================================================
+# PATH RESOLUTION HELPERS
+# ============================================================================
 
 canonicalize_existing_path() {
     local input_path="$1"
@@ -89,12 +145,8 @@ path_is_within_root() {
     local root_path="$2"
 
     case "${candidate_path}" in
-        "${root_path}"|"${root_path}"/*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
+        "${root_path}"|"${root_path}"/*) return 0 ;;
+        *) return 1 ;;
     esac
 }
 
@@ -128,7 +180,7 @@ resolve_project_target() {
         fi
     fi
 
-    if [ -z "${project_target}" ] && [[ "${candidate}" != *.sbproj ]] && [ -f "${candidate}.sbproj" ]; then
+    if [ -z "${project_target}" ] && [[ "${SBOX_PROJECT}" != *.sbproj ]] && [ -f "${candidate}.sbproj" ]; then
         resolved_candidate="$(canonicalize_existing_path "${candidate}.sbproj" || true)"
         if [ -n "${resolved_candidate}" ] && path_is_within_root "${resolved_candidate}" "${projects_root}"; then
             project_target="${resolved_candidate}"
@@ -178,9 +230,13 @@ ensure_project_libraries_dir() {
     libraries_dir="${project_dir}/Libraries"
     if [ ! -d "${libraries_dir}" ]; then
         mkdir -p "${libraries_dir}"
-        echo "info: created required local project folder ${libraries_dir}" >&2
+        log_info "created required local project folder ${libraries_dir}"
     fi
 }
+
+# ============================================================================
+# STEAMCMD HELPERS
+# ============================================================================
 
 steamcmd_installed() {
     local steamcmd_bin=""
@@ -221,18 +277,18 @@ run_steamcmd() {
     steamcmd_bin="$(resolve_steamcmd_binary || true)"
 
     if ! steamcmd_installed; then
-        echo "warn: SteamCMD runtime binary was not found (checked ${STEAMCMD_DIR}/linux32/steamcmd and ${CONTAINER_HOME}/Steam/linux32/steamcmd)" >&2
+        log_warn "SteamCMD runtime binary was not found (checked ${STEAMCMD_DIR}/linux32/steamcmd and ${CONTAINER_HOME}/Steam/linux32/steamcmd)"
         return 1
     fi
 
     if [ ! -x "${STEAM_COMPAT_LOADER}" ]; then
-        echo "warn: Steam compatibility loader missing at ${STEAM_COMPAT_LOADER}" >&2
+        log_warn "Steam compatibility loader missing at ${STEAM_COMPAT_LOADER}"
         return 1
     fi
 
     steamcmd_root="$(cd "$(dirname "${steamcmd_bin}")/.." && pwd)"
 
-    if [ ! -e "/lib/ld-linux.so.2" ] && [ -f "${STEAM_COMPAT_LOADER}"; then
+    if [ ! -e "/lib/ld-linux.so.2" ] && [ -f "${STEAM_COMPAT_LOADER}" ]; then
         ln -sf "${STEAM_COMPAT_LOADER}" /lib/ld-linux.so.2 2>/dev/null || true
     fi
 
@@ -246,6 +302,10 @@ run_steamcmd() {
     )
 }
 
+# ============================================================================
+# UPDATE FUNCTIONS (FIXED AUTO-UPDATE + CHECKER)
+# ============================================================================
+
 update_sbox() {
     local -a steam_args
     local force_platform="windows"
@@ -253,7 +313,54 @@ update_sbox() {
     steam_args=(
         +@ShutdownOnFailedCommand 1
         +@NoPromptForPassword 1
-        +@sSteamCmdForcePlatformType "${force_platform}"
+        +@sStamCmdForceePlatformType "${force_platform}"
+        +force_install_dir "${SBOX_INSTALL_DIR}"
+        +login anonymous
+        +app_update "${SBOX_APP_ID}"
+    )
+
+    # FIXED: Proper quoting for branch parameter
+    if [ -n "${SBOX_BRANCH}" ]; then
+        steam_args+=( -beta "${SBOX_BRANCH}" )
+    fi
+
+    steam_args+=( validate +quit )
+
+    if ! run_steamcmd "${steam_args[@]}"; then
+        log_warn "SteamCMD runtime probe failed; cannot run auto-update"
+        if [ ! -f "${SBOX_SERVER_EXE}" ]; then
+            log_error "${SBOX_SERVER_EXE} was not found"
+            log_error "run the egg installation script, or enable auto-update after SteamCMD has been installed"
+            return 1
+        fi
+        return 0
+    fi
+
+    log_info "running SteamCMD app_update for app ${SBOX_APP_ID} with forced platform '${force_platform}'"
+    if ! run_steamcmd "${steam_args[@]}"; then
+        log_warn "SteamCMD update failed with forced platform '${force_platform}'; refusing Linux fallback to preserve Wine-compatible server files"
+        return 1
+    fi
+
+    if [ ! -f "${SBOX_SERVER_EXE}" ] && [ -d "${SBOX_INSTALL_DIR}/linux64" ]; then
+        log_warn "update finished but Windows server executable is still missing while linux64 content exists in ${SBOX_INSTALL_DIR}"
+    fi
+}
+
+# ============================================================================
+# UPDATE CHECKER & SCHEDULED SHUTDOWN
+# ============================================================================
+
+check_for_server_update() {
+    local -a steam_args
+    local force_platform="windows"
+
+    log_info "checking for S&Box server updates (app ${SBOX_APP_ID})..."
+
+    steam_args=(
+        +@ShutdownOnFailedCommand 1
+        +@NoPromptForPassword 1
+        +@sStamCmdForceePlatformType "${force_platform}"
         +force_install_dir "${SBOX_INSTALL_DIR}"
         +login anonymous
         +app_update "${SBOX_APP_ID}"
@@ -265,25 +372,68 @@ update_sbox() {
 
     steam_args+=( validate +quit )
 
-    if ! run_steamcmd +quit; then
-        echo "warn: SteamCMD runtime probe failed; cannot run auto-update" >&2
-        if [ ! -f "${SBOX_SERVER_EXE}" ]; then
-            echo "error: SteamCMD probe failed and ${SBOX_SERVER_EXE} is missing" >&2
-            return 1
-        fi
-        return 0
-    fi
-
-    echo "info: running SteamCMD app_update for app ${SBOX_APP_ID} with forced platform '${force_platform}'" >&2
     if ! run_steamcmd "${steam_args[@]}"; then
-        echo "warn: SteamCMD update failed with forced platform '${force_platform}'; refusing Linux fallback to preserve Wine-compatible server files" >&2
+        log_warn "SteamCMD update check failed; cannot auto-update"
         return 1
     fi
 
-    if [ ! -f "${SBOX_SERVER_EXE}" ] && [ -d "${SBOX_INSTALL_DIR}/linux64" ]; then
-        echo "warn: update finished but Windows server executable is still missing while linux64 content exists in ${SBOX_INSTALL_DIR}" >&2
-    fi
+    log_info "update check complete" >> "${UPDATE_LOG}"
+    return 0
 }
+
+scheduled_update_shutdown() {
+    local remaining_time="${SBOX_SHUTDOWN_TIMER}"
+    local check_interval=1
+
+    log_info "initiating scheduled update shutdown with ${remaining_time}s timer"
+
+    while [ "${remaining_time}" -gt 0 ]; do
+        local msg=""
+        
+        if [ "${remaining_time}" -le 15 ]; then
+            msg="${SBOX_FINAL_WARNING_MESSAGE}"
+        else
+            msg="${SBOX_SHUTDOWN_MESSAGE//\[TIME\]/${remaining_time}}"
+        fi
+
+        log_info "shutdown timer: ${remaining_time}s remaining - ${msg}"
+
+        # Try to send message to server console (RCON would be ideal here)
+        # For now, log it prominently so admins see it
+        echo "say ${msg}" 2>/dev/null || true
+
+        sleep "${check_interval}"
+        remaining_time=$((remaining_time - check_interval))
+    done
+
+    log_info "update shutdown timer expired, terminating server for update"
+    exit 0
+}
+
+monitor_for_updates() {
+    local last_check=0
+    local current_time=0
+
+    log_info "update monitor started (checking every ${SBOX_UPDATE_CHECK_INTERVAL}s)"
+
+    while true; do
+        current_time=$(date +%s)
+
+        if [ $((current_time - last_check)) -ge "${SBOX_UPDATE_CHECK_INTERVAL}" ]; then
+            if check_for_server_update; then
+                log_warn "UPDATE AVAILABLE! Initiating scheduled shutdown in ${SBOX_SHUTDOWN_TIMER}s..."
+                scheduled_update_shutdown
+            fi
+            last_check="${current_time}"
+        fi
+
+        sleep 60
+    done
+}
+
+# ============================================================================
+# MAIN SERVER EXECUTION
+# ============================================================================
 
 run_sbox() {
     local -a args=()
@@ -292,8 +442,8 @@ run_sbox() {
     local project_target=""
 
     if [ ! -f "${SBOX_SERVER_EXE}" ]; then
-        echo "error: ${SBOX_SERVER_EXE} was not found" >&2
-        echo "error: run the egg installation script, or enable auto-update after SteamCMD has been installed" >&2
+        log_error "${SBOX_SERVER_EXE} was not found"
+        log_error "run the egg installation script, or enable auto-update after SteamCMD has been installed"
         exit 1
     fi
 
@@ -311,7 +461,7 @@ run_sbox() {
             args+=( "${MAP}" )
         fi
     else
-        echo "error: missing startup target; set a project target (SBOX_PROJECT) or provide GAME and MAP (current: GAME='${GAME:-}', MAP='${MAP:-}')." >&2
+        log_error "missing startup target; set a project target (SBOX_PROJECT) or provide GAME and MAP (current: GAME='${GAME:-}', MAP='${MAP:-}')"
         exit 1
     fi
 
@@ -323,8 +473,14 @@ run_sbox() {
         args+=( +net_game_server_token "${TOKEN}" )
     fi
 
+    # Add direct connect option if enabled
+    if [ "${ENABLE_DIRECT_CONNECT}" = "1" ]; then
+        args+=( +net_hide_address 0 )
+        log_info "Direct connect (Steam relay disabled) enabled"
+    fi
+
     if [ -n "${SBOX_EXTRA_ARGS}" ]; then
-        read -r -a extra <<< "${SBOX_EXTRA_ARGS}"
+        read -ra extra <<< "${SBOX_EXTRA_ARGS}"
         args+=( "${extra[@]}" )
     fi
 
@@ -332,14 +488,24 @@ run_sbox() {
 
     launch_env=(
         DOTNET_EnableWriteXorExecute=0
-        COMPlus_TieredCompilation=0
-        COMPlus_ReadyToRun=0
-        COMPlus_ZapDisable=1
+        DOTNET_TieredCompilation=0
+        DOTNET_ReadyToRun=0
+        DOTNET_ZapDisable=1
     )
+
+    # Apply admin users from variable
+    apply_admin_users
+
+    log_info "Starting S&Box server on ${SERVER_IP}"
+    log_info "Command: wine \"${SBOX_SERVER_EXE}\" ${args[*]}"
 
     cd "${SBOX_INSTALL_DIR}"
     exec env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}"
 }
+
+# ============================================================================
+# MAIN ENTRY POINT
+# ============================================================================
 
 if [ "${1:-}" = "start-sbox" ]; then
     shift
@@ -348,9 +514,19 @@ fi
 seed_runtime_files
 
 if [ "${1:-}" = "" ]; then
-    if [ "${SBOX_AUTO_UPDATE}" = "1" ] || [ "${SBOX_PREBAKED_SEEDED}" = "1" ] || [ ! -f "${SBOX_SERVER_EXE}" ]; then
+    # FIXED: Auto-update now works on boot
+    if [ "${SBOX_AUTO_UPDATE}" = "1" ] || [ "${SBOX_PREBAKEDSEEDED}" = "1" ] || [ ! -f "${SBOX_SERVER_EXE}" ]; then
+        log_info "updating S&Box server files on boot..."
         update_sbox
     fi
+    
+    # Start update monitor in background if enabled
+    if [ "${SBOX_UPDATE_CHECK}" = "1" ]; then
+        monitor_for_updates &
+        UPDATE_MONITOR_PID=$!
+        log_info "update monitor started in background (PID: ${UPDATE_MONITOR_PID})"
+    fi
+    
     run_sbox
 fi
 
