@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Pre flight checks and variable defaults
 CONTAINER_HOME="${CONTAINER_HOME:-/home/container}"
 WINEPREFIX="${WINEPREFIX:-/home/container/.wine}"
 BAKED_WINEPREFIX="${SBOX_BAKED_WINEPREFIX:-/opt/sbox-wine-prefix}"
 BAKED_SERVER_TEMPLATE="${SBOX_BAKED_SERVER_TEMPLATE:-/opt/sbox-server-template}"
 
+# S&Box Specific variables with defaults
 SBOX_INSTALL_DIR="${SBOX_INSTALL_DIR:-/home/container/sbox}"
 SBOX_SERVER_EXE="${SBOX_SERVER_EXE:-${SBOX_INSTALL_DIR}/sbox-server.exe}"
 SBOX_APP_ID="${SBOX_APP_ID:-1892930}"
@@ -14,10 +16,11 @@ SBOX_BRANCH="${SBOX_BRANCH:-}"
 STEAM_PLATFORM="${STEAM_PLATFORM:-windows}"
 STEAMCMD_DIR="${STEAMCMD_DIR:-${CONTAINER_HOME}/steamcmd}"
 
+# Optional server configuration variables
 GAME="${GAME:-}"
 MAP="${MAP:-}"
 SERVER_NAME="${SERVER_NAME:-}"
-QUERY_PORT="${QUERY_PORT:-27016}"
+QUERY_PORT="${QUERY_PORT:-}"
 MAX_PLAYERS="${MAX_PLAYERS:-}"
 ENABLE_DIRECT_CONNECT="${ENABLE_DIRECT_CONNECT:-0}"
 TOKEN="${TOKEN:-}"
@@ -25,6 +28,7 @@ SBOX_PROJECT="${SBOX_PROJECT:-}"
 SBOX_PROJECTS_DIR="${SBOX_PROJECTS_DIR:-${CONTAINER_HOME}/projects}"
 SBOX_EXTRA_ARGS="${SBOX_EXTRA_ARGS:-}"
 
+# Computed variables
 STEAM_COMPAT_LOADER="${STEAMCMD_DIR}/compat/lib/ld-linux.so.2"
 STEAM_COMPAT_LIB_PATH="${STEAMCMD_DIR}/compat/lib/i386-linux-gnu:${STEAMCMD_DIR}/compat/usr/lib/i386-linux-gnu"
 SBOX_PREBAKEDSEEDED=0
@@ -36,11 +40,10 @@ LOG_FILE="${LOG_DIR}/sbox-server.log"
 ERROR_LOG="${LOG_DIR}/sbox-error.log"
 UPDATE_LOG="${LOG_DIR}/sbox-update.log"
 
+# ============================================================================
+# LOGGING FUNCTIONS
+# ============================================================================
 mkdir -p "${LOG_DIR}"
-
-# ============================================================================
-# LOGGING FUNCTIONS (Enhanced with timestamps)
-# ============================================================================
 
 log_info() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $*" | tee -a "${LOG_FILE}"
@@ -371,7 +374,11 @@ run_sbox() {
 
     # Add direct connect option if enabled
     if [ "${ENABLE_DIRECT_CONNECT}" = "1" ]; then
-        args+=( +net_hide_address 0 )
+        args+=( +net_hide_address 0 +port ${SERVER_PORT:-27015} )
+    fi
+
+    if [ "${QUERY_PORT:-} = "1" ]; then
+        args+=( +net_query_port "${QUERY_PORT}" )
     fi
 
     if [ -n "${SBOX_EXTRA_ARGS}" ]; then
@@ -403,13 +410,17 @@ run_sbox() {
         fi
     done
 
-    log_info "Starting S&Box server on ${SERVER_IP}"
+    log_info "Starting S&Box server on IP ${SERVER_IP:-}:${QUERY_PORT} with the following configuration:"
     log_info "Command: wine \"${SBOX_SERVER_EXE}\" ${redacted_args[*]}"
 
     cd "${SBOX_INSTALL_DIR}"
     wine "${SBOX_SERVER_EXE}" "${args[@]}" &
     SERVER_PID=$!
     
+    if ! wait "${SERVER_PID}"; then
+        log_error "S&Box server process exited unexpectedly (pid=${SERVER_PID}, exit=$?)"
+        return 1
+    fi
 }
 
 # ============================================================================

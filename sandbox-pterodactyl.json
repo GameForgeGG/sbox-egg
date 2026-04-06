@@ -98,12 +98,21 @@
             "field_type": "text"
         },
         {
+            "name": "Query Port",
+            "description": "Server query port for Direct Connect. (Experimental)",
+            "env_variable": "QUERY_PORT",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "nullable|numeric|between:1024,65535",
+        },
+        {
             "name": "Direct Connect (No Steam Relay)",
             "description": "Allow direct connection via IP+Port without Steam relay (0=Steam relay enabled, 1=Direct IP connection enabled). When enabled, players can connect directly to the server IP and port instead of using Steam relay.",
             "env_variable": "ENABLE_DIRECT_CONNECT",
             "default_value": "0",
-            "user_viewable": true,
-            "user_editable": true,
+            "user_viewable": false,
+            "user_editable": false,
             "rules": "required|in:0,1",
             "field_type": "text"
         },
