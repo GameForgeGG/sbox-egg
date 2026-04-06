@@ -377,7 +377,7 @@ run_sbox() {
         args+=( +net_hide_address 0 +port ${SERVER_PORT:-27015} )
     fi
 
-    if [ "${QUERY_PORT:-} = "1" ]; then
+    if [ -n "${QUERY_PORT:-}" ]; then
         args+=( +net_query_port "${QUERY_PORT}" )
     fi
 
