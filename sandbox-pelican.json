@@ -1,28 +1,30 @@
 {
-    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PELICAN PANEL - PELICAN.IO",
     "meta": {
         "version": "PTDL_v2",
         "update_url": null
     },
+    "exported_at": "2026-04-09T00:00:00+00:00",
     "name": "s&box Game Server",
-    "author": "team@gameforge.gg",
-    "description": "s&box dedicated server using a custom runtime image with baked Wine + Windows .NET.",
+    "author": "lucky@svn.gg",
+    "uuid": "dac2aaa2-4ef2-4220-a0cf-a968e61919f7",
+    "description": "s&box dedicated server using a custom runtime image with baked Wine + Windows .NET, while SteamCMD is installed by the egg installer and server files are managed at runtime.",
     "features": [],
     "docker_images": {
-        "ghcr.io\/hyberhost\/gameforge-sbox-egg:latest": "ghcr.io\/hyberhost\/gameforge-sbox-egg:latest"
+        "ghcr.io/hyberhost/gameforge-sbox-egg:latest": "ghcr.io/hyberhost/gameforge-sbox-egg:latest"
     },
     "file_denylist": [],
     "startup": "start-sbox",
     "config": {
         "files": "{}",
         "startup": "{\r\n    \"done\": \"Loading game|Server started\"\r\n}",
-        "logs": "{\r\n    \"custom\": true,\r\n    \"location\": \"logs/*.log\"\r\n}",
+        "logs": "{\r\n    \"custom\": false,\r\n    \"location\": \"logs/sbox-*.log\"\r\n}",
         "stop": "^C"
     },
     "scripts": {
         "installation": {
-            "script": "#!/bin/bash\nset -euoo pipefail\n\nmkdir -p /mnt/server /mnt/server/steamcmd /mnt/server/steamapps\ncd /tmp\nrm -f steamcmd.tar.gz\ncurl -sSL -o steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\ntar -xzvf steamcmd.tar.gz -C /mnt/server/steamcmd --no-same-owner\ncd /mnt/server/steamcmd\nchown -R root:root /mnt || true\nexport HOME=/mnt/server\n\n./steamcmd.sh +quit\n\nmkdir -p /mnt/server/.steam/sdk32\ncp -v linux32/steamclient.so /mnt/server/.steam/sdk32/steamclient.so\nmkdir -p /mnt/server/.steam/sdk64\ncp -v linux64/steamclient.so /mnt/server/.steam/sdk64/steamclient.so\n\necho \"\\n-----------------------------------\"\necho \"SteamCMD installation complete...\"\necho \"-----------------------------------\"\n",
-            "container": "ghcr.io/ptero-eggs/installers:debian",
+            "script": "#!/bin/bash\nset -euo pipefail\n\nmkdir -p /mnt/server /mnt/server/steamcmd /mnt/server/steamapps\ncd /tmp\nrm -f steamcmd.tar.gz\ncurl -sSL -o steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\ntar -xzvf steamcmd.tar.gz -C /mnt/server/steamcmd --no-same-owner\ncd /mnt/server/steamcmd\nchown -R root:root /mnt/server/steamcmd /mnt/server/.steam || true\nexport HOME=/mnt/server\n\n./steamcmd.sh +quit\n\nmkdir -p /mnt/server/.steam/sdk32\ncp -v linux32/steamclient.so /mnt/server/.steam/sdk32/steamclient.so\nmkdir -p /mnt/server/.steam/sdk64\ncp -v linux64/steamclient.so /mnt/server/.steam/sdk64/steamclient.so\n\necho \"-----------------------------------------\"\necho \"SteamCMD installation completed...\"\necho \"-----------------------------------------\"\n",
+            "container": "ghcr.io/pelican-eggs/installers:debian",
             "entrypoint": "bash"
         }
     },
@@ -41,7 +43,7 @@
             "name": "Server Name",
             "description": "Public server name shown in the s&box server browser and listings.",
             "env_variable": "SERVER_NAME",
-            "default_value": "Pterodactyl Sandbox Server",
+            "default_value": "Pelican Sandbox Server",
             "user_viewable": true,
             "user_editable": true,
             "rules": "nullable|string|max:128",
@@ -78,41 +80,12 @@
             "field_type": "text"
         },
         {
-            "name": "Max Players",
-            "description": "Maximum number of players allowed on the server. (This depends on gamemode support, setting this may cause issues)",
-            "env_variable": "MAX_PLAYERS",
-            "default_value": "",
-            "user_viewable": true,
-            "user_editable": true,
-            "rules": "nullable|numeric|between:1,256",
-            "field_type": "text"
-        },
-        {
             "name": "Auto Update",
             "description": "Automatic server updates. Currently not working at runtime; image rebuild is required.",
             "env_variable": "SBOX_AUTO_UPDATE",
             "default_value": "1",
             "user_viewable": true,
             "user_editable": true,
-            "rules": "required|in:0,1",
-            "field_type": "text"
-        },
-        {
-            "name": "Query Port",
-            "description": "Server query port for Direct Connect. (Experimental)",
-            "env_variable": "QUERY_PORT",
-            "default_value": "",
-            "user_viewable": false,
-            "user_editable": false,
-            "rules": "nullable|numeric|between:1024,65535",
-        },
-        {
-            "name": "Direct Connect (No Steam Relay)",
-            "description": "Allow direct connection via IP+Port without Steam relay (0=Steam relay enabled, 1=Direct IP connection enabled). When enabled, players can connect directly to the server IP and port instead of using Steam relay.",
-            "env_variable": "ENABLE_DIRECT_CONNECT",
-            "default_value": "0",
-            "user_viewable": false,
-            "user_editable": false,
             "rules": "required|in:0,1",
             "field_type": "text"
         },
