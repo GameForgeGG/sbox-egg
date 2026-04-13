@@ -235,7 +235,9 @@ run_steamcmd() {
     local steamcmd_bin=""
     local steamcmd_library_path="/lib:/usr/lib/games/steam"
 
-    mkdir -p "${CONTAINER_HOME}/.local/share"
+    mkdir -p "${CONTAINER_HOME}/.steam" "${CONTAINER_HOME}/.local/share" "${CONTAINER_HOME}/Steam"
+    ln -sfn "${CONTAINER_HOME}/Steam" "${CONTAINER_HOME}/.steam/root"
+    ln -sfn "${CONTAINER_HOME}/Steam" "${CONTAINER_HOME}/.steam/steam"
 
     steamcmd_bin="$(resolve_steamcmd_binary || true)"
 
