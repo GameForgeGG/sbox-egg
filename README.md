@@ -15,7 +15,8 @@ Provide a production-ready egg that:
 
 ## Repository Layout
 
-- `sandbox-pterodactyl.json` — Pterodactyl egg export (import into your Pterodactyl panel).
+- `sandbox-pterodactyl.json` — Pterodactyl egg export for the Wine-based runtime image.
+- `sandbox-linux-native-pterodactyl.json` — Pterodactyl egg export for Debian native Linux builds from `DrakeFruit/sbox-public` (`linux-fixes`).
 - `sandbox-pelican.json` — Pelican egg export (import into your Pelican panel).
 - `Yolk/Dockerfile` — Docker image build definition.
 - `Yolk/entrypoint.sh` — Runtime startup and orchestration logic.
@@ -33,7 +34,11 @@ SteamCMD is provided by the base image and runs at container startup to update t
 
 ## Egg Focus
 
-Both egg files are functionally identical — they share the same Docker image, startup command, variables, and runtime behavior.
+The repository now includes two Pterodactyl egg tracks:
+- `sandbox-pterodactyl.json`: Wine-based runtime image path (stable production path).
+- `sandbox-linux-native-pterodactyl.json`: native Linux source-build path for Debian using `DrakeFruit/sbox-public` `linux-fixes`.
+
+The Pelican egg mirrors the Wine-based track.
 
 Key details:
 - Startup command: `start-sbox`
@@ -72,11 +77,12 @@ Project selection precedence:
 ## Quick Start
 
 1. Import the appropriate egg into your panel:
-  - **Pterodactyl**: import `sandbox-pterodactyl.json`
-  - **Pelican**: import `sandbox-pelican.json`
-2. Set the Docker image to `ghcr.io/hyberhost/gameforge-sbox-egg:latest` (or your own build — see `Yolk/README.md`).
+  - **Pterodactyl (Wine path)**: import `sandbox-pterodactyl.json`
+  - **Pterodactyl (Native Linux path)**: import `sandbox-linux-native-pterodactyl.json`
+  - **Pelican (Wine path)**: import `sandbox-pelican.json`
+2. Set the Docker image defined by the egg you selected.
 3. Create a server and configure variables.
-4. Start the server. On first boot it will seed files and run the updater before launching.
+4. Start the server. On first boot it will run the configured install/start workflow for that egg.
 
 ## Notes
 

@@ -1,0 +1,91 @@
+{
+  "_comment": "S&box Linux Native - Pterodactyl egg built from DrakeFruit/sbox-public linux-fixes branch",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "name": "S&box Linux Native",
+  "author": "vMax@itmightwork.gg",
+  "description": "Native Linux s&box dedicated server built from source (DrakeFruit/sbox-public linux-fixes). Set RAM to 4096MB+ (do NOT use unlimited).",
+  "features": null,
+  "docker_images": {
+    "Ubuntu (required - glibc 2.38+)": "ghcr.io/pelican-eggs/yolks:ubuntu"
+  },
+  "file_denylist": [],
+  "startup": "export DOTNET_ROOT=/home/container/.dotnet && export PATH=$PATH:$DOTNET_ROOT && export TERM=xterm && export COLUMNS=80 && export LINES=24 && export LD_LIBRARY_PATH=/home/container/sbox-public/game/bin/linuxsteamrt64:/home/container/sbox-public/game:$DOTNET_ROOT:$LD_LIBRARY_PATH && cd /home/container/sbox-public/game && stty cols 80 rows 24 2>/dev/null; ./sbox-server +game {{GAME_IDENT}} {{GAME_MAP}} +hostname \"{{SRV_NAME}}\" +port {{SERVER_PORT}} +queryport {{QUERY_PORT}} {{EXTRA_ARGS}} $([ -n \"{{TOKEN}}\" ] && echo \"+net_game_server_token {{TOKEN}}\") 2>&1 | tr '\\r' '\\n'",
+  "config": {
+    "files": "{}",
+    "startup": "{\r\n    \"done\": \"Load Complete\"\r\n}",
+    "logs": "{}",
+    "stop": "^C"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\n# S&box Linux Native Install Script\n# Server Files: /mnt/server\n\nset -e\n\nRED='\\033[0;31m'\nGREEN='\\033[0;32m'\nYELLOW='\\033[1;33m'\nBLUE='\\033[0;34m'\nNC='\\033[0m'\n\necho -e \"${BLUE}=================================================${NC}\"\necho -e \"${YELLOW}  S&box Linux Native - Installation${NC}\"\necho -e \"${BLUE}=================================================${NC}\"\n\n## 1. System dependencies\necho -e \"\\n${YELLOW}[1/7] Installing system dependencies...${NC}\"\napt update\napt install -y \\\n    git wget curl ca-certificates gnupg apt-transport-https \\\n    libfontconfig1 libfreetype6 libxi6 libxcursor1 libxrandr2 \\\n    libxinerama1 libsdl2-2.0-0 libvulkan1 libopenal1\necho -e \"${GREEN}[1/7] Dependencies installed.${NC}\"\n\n## 2. Install .NET SDK\necho -e \"\\n${YELLOW}[2/7] Installing .NET SDK...${NC}\"\nexport HOME=/mnt/server\nexport DOTNET_ROOT=/mnt/server/.dotnet\nmkdir -p $DOTNET_ROOT\nDOTNET_OK=0\n\n## --- Method 1: Microsoft APT repository ---\necho -e \"${YELLOW}[APT] Adding Microsoft package repository...${NC}\"\ncd /tmp\nset +e\nwget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O /tmp/ms-prod.deb\nWGET_EXIT=$?\nset -e\n\nif [ $WGET_EXIT -eq 0 ] && [ -f /tmp/ms-prod.deb ]; then\n    dpkg -i /tmp/ms-prod.deb\n    rm -f /tmp/ms-prod.deb\n    apt update\n\n    set +e\n    echo -e \"${YELLOW}[APT] Installing dotnet-sdk-10.0...${NC}\"\n    apt install -y dotnet-sdk-10.0 2>&1\n    APT_EXIT=$?\n    set -e\n\n    if [ $APT_EXIT -ne 0 ]; then\n        echo -e \"${YELLOW}[APT] dotnet-sdk-10.0 not found, trying dotnet-sdk-9.0...${NC}\"\n        set +e\n        apt install -y dotnet-sdk-9.0 2>&1\n        APT_EXIT=$?\n        set -e\n    fi\n\n    if [ $APT_EXIT -eq 0 ] && [ -d \"/usr/share/dotnet\" ]; then\n        echo -e \"${YELLOW}[APT] Copying .NET SDK to server directory...${NC}\"\n        cp -a /usr/share/dotnet/* $DOTNET_ROOT/\n        if [ -f \"$DOTNET_ROOT/dotnet\" ]; then\n            DOTNET_OK=1\n            echo -e \"${GREEN}[APT] .NET SDK installed successfully.${NC}\"\n        fi\n    fi\nelse\n    echo -e \"${RED}[APT] Could not download Microsoft repo package.${NC}\"\nfi\n\n## --- Method 2: Azure CDN direct tarball ---\nif [ \"$DOTNET_OK\" -eq 0 ]; then\n    echo -e \"${YELLOW}[CDN] Trying Azure CDN direct download...${NC}\"\n    cd /tmp\n    for CHANNEL in \"10.0\" \"9.0\"; do\n        set +e\n        VERSION=$(curl -sSL \"https://dotnetcli.azureedge.net/dotnet/Sdk/${CHANNEL}/latest.version\" 2>/dev/null | tr -d '\\r\\n')\n        set -e\n        if [ -n \"$VERSION\" ]; then\n            URL=\"https://dotnetcli.azureedge.net/dotnet/Sdk/${VERSION}/dotnet-sdk-${VERSION}-linux-x64.tar.gz\"\n            echo -e \"${YELLOW}[CDN] Downloading .NET $CHANNEL ($VERSION)...${NC}\"\n            set +e\n            wget -q -O /tmp/dotnet-sdk.tar.gz \"$URL\" 2>&1\n            DL_EXIT=$?\n            set -e\n            if [ $DL_EXIT -eq 0 ] && [ -f /tmp/dotnet-sdk.tar.gz ]; then\n                FILE_SIZE=$(stat -c%s /tmp/dotnet-sdk.tar.gz 2>/dev/null || echo 0)\n                if [ \"$FILE_SIZE\" -gt 1000000 ]; then\n                    echo -e \"${YELLOW}[CDN] Extracting ($FILE_SIZE bytes)...${NC}\"\n                    tar -xzf /tmp/dotnet-sdk.tar.gz -C $DOTNET_ROOT\n                    rm -f /tmp/dotnet-sdk.tar.gz\n                    if [ -f \"$DOTNET_ROOT/dotnet\" ]; then\n                        DOTNET_OK=1\n                        echo -e \"${GREEN}[CDN] .NET $CHANNEL installed.${NC}\"\n                        break\n                    fi\n                else\n                    echo -e \"${RED}[CDN] File too small ($FILE_SIZE bytes), skipping.${NC}\"\n                    rm -f /tmp/dotnet-sdk.tar.gz\n                fi\n            fi\n        fi\n    done\nfi\n\n## --- Method 3: dotnet-install.sh ---\nif [ \"$DOTNET_OK\" -eq 0 ]; then\n    echo -e \"${YELLOW}[Script] Trying dotnet-install.sh...${NC}\"\n    cd /tmp\n    set +e\n    curl -sSL -o /tmp/dotnet-install.sh https://dot.net/v1/dotnet-install.sh 2>&1\n    set -e\n    chmod +x /tmp/dotnet-install.sh\n    for CHANNEL in \"10.0\" \"9.0\"; do\n        echo -e \"${YELLOW}[Script] Trying --channel $CHANNEL...${NC}\"\n        set +e\n        /tmp/dotnet-install.sh --channel $CHANNEL --install-dir $DOTNET_ROOT 2>&1\n        set -e\n        if [ -f \"$DOTNET_ROOT/dotnet\" ]; then\n            DOTNET_OK=1\n            echo -e \"${GREEN}[Script] .NET SDK installed.${NC}\"\n            break\n        fi\n    done\nfi\n\n## --- Verify ---\nif [ \"$DOTNET_OK\" -eq 0 ] || [ ! -f \"$DOTNET_ROOT/dotnet\" ]; then\n    echo -e \"${RED}=================================================${NC}\"\n    echo -e \"${RED}  FATAL: .NET SDK installation failed.${NC}\"\n    echo -e \"${RED}  All 3 methods failed (APT, Azure CDN, Script).${NC}\"\n    echo -e \"${RED}  Check server network and try reinstalling.${NC}\"\n    echo -e \"${RED}=================================================${NC}\"\n    exit 1\nfi\n\nexport PATH=$PATH:$DOTNET_ROOT\necho -e \"${GREEN}.NET SDK: $($DOTNET_ROOT/dotnet --version)${NC}\"\n\n## 3. Backup data\necho -e \"\\n${YELLOW}[3/7] Backing up data...${NC}\"\nif [ -d \"/mnt/server/sbox-public/game/data\" ]; then\n    cp -r /mnt/server/sbox-public/game/data /tmp/sbox-data-backup\n    echo -e \"${GREEN}[3/7] Data backed up.${NC}\"\nelse\n    echo -e \"${YELLOW}[3/7] No data folder found, skipping.${NC}\"\nfi\n\n## 4. Clone or update repo\necho -e \"\\n${YELLOW}[4/7] Setting up s&box source...${NC}\"\nif [ -d \"/mnt/server/sbox-public/.git\" ]; then\n    echo -e \"${YELLOW}Repo exists, pulling latest...${NC}\"\n    git config --global --add safe.directory /mnt/server/sbox-public\n    cd /mnt/server/sbox-public\n    git pull\nelif [ -d \"/mnt/server/sbox-public\" ]; then\n    echo -e \"${YELLOW}Directory exists but no .git, removing and re-cloning...${NC}\"\n    rm -rf /mnt/server/sbox-public\n    cd /mnt/server\n    git clone https://github.com/DrakeFruit/sbox-public.git -b linux-fixes\nelse\n    echo -e \"${YELLOW}Cloning DrakeFruit/sbox-public (linux-fixes)...${NC}\"\n    mkdir -p /mnt/server\n    cd /mnt/server\n    git clone https://github.com/DrakeFruit/sbox-public.git -b linux-fixes\nfi\ncd /mnt/server/sbox-public\necho -e \"${GREEN}[4/7] Source ready.${NC}\"\n\n## 5. Build server\necho -e \"\\n${YELLOW}[5/7] Building server (this may take 2-10 min)...${NC}\"\nset +e\n$DOTNET_ROOT/dotnet run --project ./engine/Tools/SboxBuild/SboxBuild.csproj -- build --config Developer 2>&1\nBUILD_EXIT=$?\nset -e\nif [ $BUILD_EXIT -ne 0 ]; then\n    echo -e \"${RED}Build failed (exit $BUILD_EXIT). If exit 137, increase server RAM to 4GB+.${NC}\"\n    exit 1\nfi\necho -e \"${GREEN}[5/7] Build complete.${NC}\"\n\n## 6. Copy runtime libraries\necho -e \"\\n${YELLOW}[6/7] Copying runtime libraries to server...${NC}\"\nLIBDIR=/mnt/server/sbox-public/game/bin/linuxsteamrt64\nmkdir -p $LIBDIR\nfor LIB in \\\n    libXi libXcursor libXrandr libXinerama libXfixes libXext libXrender \\\n    libX11 libX11-xcb libxcb libxcb-dri3 libxcb-present libxcb-randr \\\n    libxcb-render libxcb-shm libxcb-sync libxcb-xfixes libxshmfence \\\n    libXau libXdmcp libXss libxkbcommon \\\n    libvulkan libVkLayer \\\n    libopenal \\\n    libfreetype \\\n    libdrm libdrm_amdgpu libgbm \\\n    libwayland-client libwayland-cursor libwayland-egl libwayland-server \\\n    libdecor-0 \\\n    libSDL2 \\\n    libfontconfig libharfbuzz libfribidi libpango libpangoft2 libpangocairo \\\n    libcairo libpixman libdatrie libthai \\\n    libpulse libasyncns libsndfile libFLAC libvorbis libvorbisenc libogg libopus \\\n    libsamplerate libsndio libmpg123 libmp3lame \\\n    libelf libedit libllvm; do\n    find /usr/lib -name \"${LIB}*.so*\" -exec cp -n {} $LIBDIR/ \\; 2>/dev/null\ndone\nLIB_COUNT=$(ls -1 $LIBDIR/*.so* 2>/dev/null | wc -l)\necho -e \"${GREEN}[6/7] $LIB_COUNT libraries in $LIBDIR${NC}\"\n\n## Restore data backup\nif [ -d \"/tmp/sbox-data-backup\" ]; then\n    echo -e \"${YELLOW}Restoring data backup...${NC}\"\n    mkdir -p /mnt/server/sbox-public/game/data\n    cp -r /tmp/sbox-data-backup/* /mnt/server/sbox-public/game/data/\n    rm -rf /tmp/sbox-data-backup\n    echo -e \"${GREEN}Data restored.${NC}\"\nfi\n\n## 7. Permissions\necho -e \"\\n${YELLOW}[7/7] Setting permissions...${NC}\"\nchmod +x /mnt/server/sbox-public/game/sbox-server 2>/dev/null || true\nchown -R 999:999 /mnt/server\necho -e \"${GREEN}[7/7] Permissions set.${NC}\"\n\necho -e \"\\n${BLUE}=================================================${NC}\"\necho -e \"${GREEN}  Installation complete!${NC}\"\necho -e \"${BLUE}=================================================${NC}\"\nexit 0\n",
+      "container": "ghcr.io/parkervcp/installers:debian",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Server Name",
+      "description": "Name of the server visible in the server list.",
+      "env_variable": "SRV_NAME",
+      "default_value": "S&box Server",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:60",
+      "field_type": "text"
+    },
+    {
+      "name": "Game Identifier",
+      "description": "The s&box game to load (org.game format). Example: facepunch.sandbox",
+      "env_variable": "GAME_IDENT",
+      "default_value": "facepunch.sandbox",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:100",
+      "field_type": "text"
+    },
+    {
+      "name": "Game Map",
+      "description": "The map/scene to load (org.map format). Example: facepunch.flatgrass. Leave empty if not needed.",
+      "env_variable": "GAME_MAP",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:100",
+      "field_type": "text"
+    },
+    {
+      "name": "Extra Args",
+      "description": "Optional extra launch arguments appended to sbox-server. Use with caution.",
+      "env_variable": "EXTRA_ARGS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:512",
+      "field_type": "text"
+    },
+    {
+      "name": "Game Server Token",
+      "description": "Optional Steam game server token passed as +net_game_server_token.",
+      "env_variable": "TOKEN",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": false,
+      "rules": "nullable|string|max:255",
+      "field_type": "text"
+    },
+    {
+      "name": "Query Port",
+      "description": "UDP port used by Steam for server discovery.",
+      "env_variable": "QUERY_PORT",
+      "default_value": "27016",
+      "user_viewable": true,
+      "user_editable": false,
+      "rules": "required|integer|between:1024,65535",
+      "field_type": "text"
+    }
+  ]
+}
