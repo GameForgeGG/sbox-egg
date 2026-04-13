@@ -89,12 +89,10 @@ RUN if ! find /work/wineprefix/drive_c -name hostfxr.dll 2>/dev/null | grep -q .
         echo "warn: hostfxr.dll not found — Windows .NET may have failed to install" >&2; \
     fi
 
-FROM steamcmd/steamcmd:alpine AS steamcmd-runtime
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Stage 2: Runtime (match dxura base as closely as possible)
+# Stage 2: Runtime (SteamCMD Alpine base + Wine runtime)
 # ─────────────────────────────────────────────────────────────────────────────
-FROM alpine:edge
+FROM steamcmd/steamcmd:alpine
 
 LABEL author="Steven A. Smith" maintainer="steven.smith@hyberhost.com"
 LABEL description="S&Box Pterodactyl Egg (dxura-adapted)" version="2.0" license="MIT"
@@ -121,7 +119,6 @@ ENV CONTAINER_HOME=/home/container \
     SBOX_AUTO_UPDATE=1 \
     SBOX_LOG_KEEP=10 \
     STEAM_PLATFORM=windows \
-    STEAMCMD_DIR=/home/container/.steamcmd \
     DOTNET_EnableWriteXorExecute=0 \
     DOTNET_TieredCompilation=0 \
     DOTNET_ReadyToRun=0 \
@@ -150,19 +147,10 @@ RUN mkdir -p \
          /home/container/projects \
          /home/container/logs \
          /home/container/sbox \
-         /home/container/.steamcmd \
     && chmod 1777 /tmp
 
 COPY --from=builder /work/wineprefix /opt/sbox-wine-prefix
 COPY --from=builder /work/server /opt/sbox-server-template
-COPY --from=steamcmd-runtime /usr/bin/steamcmd /usr/bin/steamcmd
-COPY --from=steamcmd-runtime /usr/lib/games/steam /usr/lib/games/steam
-COPY --from=steamcmd-runtime /lib/ld-linux.so.2 /lib/ld-linux.so.2
-COPY --from=steamcmd-runtime /lib/libc.so.6 /lib/libc.so.6
-COPY --from=steamcmd-runtime /lib/libdl.so.2 /lib/libdl.so.2
-COPY --from=steamcmd-runtime /lib/libm.so.6 /lib/libm.so.6
-COPY --from=steamcmd-runtime /lib/libpthread.so.0 /lib/libpthread.so.0
-COPY --from=steamcmd-runtime /lib/librt.so.1 /lib/librt.so.1
 
 RUN chmod -R u+rwX,g+rX,o+rX /opt/sbox-wine-prefix /opt/sbox-server-template
 
