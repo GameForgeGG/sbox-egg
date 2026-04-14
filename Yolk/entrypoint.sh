@@ -267,6 +267,15 @@ run_steamcmd_with_timeout() {
         return 1
     fi
 
+    # Normalize timeout_seconds to integer by stripping fractional part
+    if [[ "${timeout_seconds}" == *.* ]]; then
+        timeout_seconds="${timeout_seconds%%.*}"
+    fi
+    # Default to 0 if empty after stripping
+    if [ -z "${timeout_seconds}" ]; then
+        timeout_seconds=0
+    fi
+
     if [ "${timeout_seconds}" -gt 0 ] && command -v timeout >/dev/null 2>&1; then
         HOME="${CONTAINER_HOME}" LD_LIBRARY_PATH="${steamcmd_library_path}" timeout "${timeout_seconds}" "${steamcmd_bin}" "${args[@]}"
         return $?
