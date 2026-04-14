@@ -13,6 +13,7 @@ SBOX_SERVER_EXE="${SBOX_SERVER_EXE:-${SBOX_INSTALL_DIR}/sbox-server.exe}"
 SBOX_APP_ID="${SBOX_APP_ID:-1892930}"
 SBOX_AUTO_UPDATE="${SBOX_AUTO_UPDATE:-1}"
 SBOX_BRANCH="${SBOX_BRANCH:-}"
+SBOX_STEAMCMD_TIMEOUT="${SBOX_STEAMCMD_TIMEOUT:-600}"
 
 # Optional server configuration variables
 GAME="${GAME:-}"
@@ -249,14 +250,50 @@ run_steamcmd() {
     HOME="${CONTAINER_HOME}" LD_LIBRARY_PATH="${steamcmd_library_path}" "${steamcmd_bin}" "${args[@]}"
 }
 
+run_steamcmd_with_timeout() {
+    local timeout_seconds="$1"
+    shift
+    local -a args=("$@")
+    local steamcmd_bin=""
+    local steamcmd_library_path="/lib:/usr/lib/games/steam"
+
+    mkdir -p "${CONTAINER_HOME}/.steam" "${CONTAINER_HOME}/.local/share" "${CONTAINER_HOME}/Steam"
+    ln -sfn "${CONTAINER_HOME}/Steam" "${CONTAINER_HOME}/.steam/root"
+    ln -sfn "${CONTAINER_HOME}/Steam" "${CONTAINER_HOME}/.steam/steam"
+
+    steamcmd_bin="$(resolve_steamcmd_binary || true)"
+    if [ -z "${steamcmd_bin}" ]; then
+        log_warn "SteamCMD binary not found in expected locations"
+        return 1
+    fi
+
+    # Normalize timeout_seconds to integer by stripping fractional part
+    if [[ "${timeout_seconds}" == *.* ]]; then
+        timeout_seconds="${timeout_seconds%%.*}"
+    fi
+    # Default to 0 if empty after stripping
+    if [ -z "${timeout_seconds}" ]; then
+        timeout_seconds=0
+    fi
+
+    if [ "${timeout_seconds}" -gt 0 ] && command -v timeout >/dev/null 2>&1; then
+        HOME="${CONTAINER_HOME}" LD_LIBRARY_PATH="${steamcmd_library_path}" timeout "${timeout_seconds}" "${steamcmd_bin}" "${args[@]}"
+        return $?
+    fi
+
+    HOME="${CONTAINER_HOME}" LD_LIBRARY_PATH="${steamcmd_library_path}" "${steamcmd_bin}" "${args[@]}"
+}
+
 # ============================================================================
 # UPDATE FUNCTIONS
 # ============================================================================
 
 update_sbox() {
     local -a steam_args
+    local -a steam_args_retry
     local -a probe_args
     local force_platform="windows"
+    local steamcmd_status=0
 
     : > "${UPDATE_LOG}"
 
@@ -279,23 +316,57 @@ update_sbox() {
         steam_args+=( -beta "${SBOX_BRANCH}" )
     fi
 
+    steam_args_retry=("${steam_args[@]}")
     steam_args+=( validate +quit )
+    steam_args_retry+=( +quit )
 
-    if ! run_steamcmd "${probe_args[@]}" 2>&1 | tee -a "${UPDATE_LOG}"; then
+    set +e
+    run_steamcmd_with_timeout "${SBOX_STEAMCMD_TIMEOUT}" "${probe_args[@]}" 2>&1 | tee -a "${UPDATE_LOG}"
+    steamcmd_status=${PIPESTATUS[0]}
+    set -e
+    if [ "${steamcmd_status}" -ne 0 ]; then
         log_warn "SteamCMD runtime probe failed; cannot run auto-update"
+        if [ "${steamcmd_status}" -eq 124 ]; then
+            log_warn "SteamCMD probe timed out after ${SBOX_STEAMCMD_TIMEOUT}s (common hang point: Steam API/user info)"
+        fi
         log_warn "see ${UPDATE_LOG} for details"
         if [ ! -f "${SBOX_SERVER_EXE}" ]; then
             log_error "${SBOX_SERVER_EXE} was not found"
             log_error "run the egg installation script, or enable auto-update after SteamCMD has been installed"
             return 1
         fi
+        log_warn "continuing startup with existing server files because ${SBOX_SERVER_EXE} already exists"
         return 0
     fi
 
     log_info "running SteamCMD app_update for app ${SBOX_APP_ID} with forced platform '${force_platform}'"
-    if ! run_steamcmd "${steam_args[@]}" 2>&1 | tee -a "${UPDATE_LOG}"; then
+    set +e
+    run_steamcmd_with_timeout "${SBOX_STEAMCMD_TIMEOUT}" "${steam_args[@]}" 2>&1 | tee -a "${UPDATE_LOG}"
+    steamcmd_status=${PIPESTATUS[0]}
+    set -e
+    if [ "${steamcmd_status}" -ne 0 ]; then
+        if grep -q "Missing configuration" "${UPDATE_LOG}"; then
+            log_warn "SteamCMD reported missing configuration; retrying app_update once without validate"
+            set +e
+            run_steamcmd_with_timeout "${SBOX_STEAMCMD_TIMEOUT}" "${steam_args_retry[@]}" 2>&1 | tee -a "${UPDATE_LOG}"
+            steamcmd_status=${PIPESTATUS[0]}
+            set -e
+        fi
+
+        if [ "${steamcmd_status}" -eq 0 ]; then
+            log_info "SteamCMD retry completed successfully"
+            return 0
+        fi
+
         log_warn "SteamCMD update failed with forced platform '${force_platform}'; refusing Linux fallback to preserve Wine-compatible server files"
+        if [ "${steamcmd_status}" -eq 124 ]; then
+            log_warn "SteamCMD update timed out after ${SBOX_STEAMCMD_TIMEOUT}s"
+        fi
         log_warn "see ${UPDATE_LOG} for details"
+        if [ -f "${SBOX_SERVER_EXE}" ]; then
+            log_warn "continuing startup with existing server files because ${SBOX_SERVER_EXE} already exists"
+            return 0
+        fi
         return 1
     fi
 

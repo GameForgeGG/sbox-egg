@@ -23,6 +23,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG BAKE_WINETRICKS_VERBS="win10 vcrun2022"
 ARG BAKE_WIN_DOTNET_VERSION=10.0.0
 ARG BAKE_SBOX_APP_ID=1892930
+ARG BAKE_SBOX_CACHE_BUSTER=static
+ARG BAKE_STEAMCMD_TIMEOUT=900
 
 RUN dpkg --add-architecture i386 \
     && sed -i 's/^Components: main$/& contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
@@ -63,12 +65,13 @@ RUN mkdir -p /work && cd /work && \
 # not depend on runtime Steam download behavior.
 # Keep this Windows-only to avoid baking Linux depots into the template.
 RUN mkdir -p /work/steamcmd /work/server \
+    && test -n "${BAKE_SBOX_CACHE_BUSTER}" \
      && wget -qO /work/steamcmd/steamcmd_linux.tar.gz \
          https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
      && tar -xzf /work/steamcmd/steamcmd_linux.tar.gz -C /work/steamcmd \
      && chmod 0755 /work/steamcmd/steamcmd.sh \
      && rm /work/steamcmd/steamcmd_linux.tar.gz \
-     && if ! bash /work/steamcmd/steamcmd.sh \
+     && if ! timeout "${BAKE_STEAMCMD_TIMEOUT}" bash /work/steamcmd/steamcmd.sh \
             +@ShutdownOnFailedCommand 1 \
             +@NoPromptForPassword 1 \
             +@sSteamCmdForcePlatformType windows \
@@ -76,6 +79,9 @@ RUN mkdir -p /work/steamcmd /work/server \
             +login anonymous \
             +app_update ${BAKE_SBOX_APP_ID} validate \
             +quit; then \
+            if [ "$?" -eq 124 ]; then \
+                echo "warn: build-time SteamCMD timed out after ${BAKE_STEAMCMD_TIMEOUT}s (possible Steam API/user info stall)" >&2; \
+            fi; \
             echo "warn: build-time Windows depot download failed for app ${BAKE_SBOX_APP_ID}; runtime update will be required" >&2; \
             rm -rf /work/server/*; \
           fi \

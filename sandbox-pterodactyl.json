@@ -137,6 +137,16 @@
             "field_type": "text"
         },
         {
+            "name": "SteamCMD Timeout (seconds)",
+            "description": "Maximum time to wait for each SteamCMD probe/update call before continuing startup (0 disables timeout).",
+            "env_variable": "SBOX_STEAMCMD_TIMEOUT",
+            "default_value": "600",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|numeric|between:0,7200",
+            "field_type": "text"
+        },
+        {
             "name": "Windows .NET Version",
             "description": "Informational only: Windows .NET runtime version baked into the container image.",
             "env_variable": "WIN_DOTNET_VERSION",

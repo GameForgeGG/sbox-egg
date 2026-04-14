@@ -80,12 +80,41 @@
             "field_type": "text"
         },
         {
+            "name": "Max Players",
+            "description": "Maximum number of players allowed on the server. (This depends on gamemode support, setting this may cause issues)",
+            "env_variable": "MAX_PLAYERS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|numeric|between:1,256",
+            "field_type": "text"
+        },
+        {
             "name": "Auto Update",
-            "description": "Automatic server updates. Currently not working at runtime; image rebuild is required.",
+            "description": "Run a SteamCMD update check on every container boot to keep the server up to date (1=enabled, 0=disabled).",
             "env_variable": "SBOX_AUTO_UPDATE",
             "default_value": "1",
             "user_viewable": true,
             "user_editable": true,
+            "rules": "required|in:0,1",
+            "field_type": "text"
+        },
+        {
+            "name": "Query Port",
+            "description": "Server query port for Direct Connect. (Experimental)",
+            "env_variable": "QUERY_PORT",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "nullable|numeric|between:1024,65535"
+        },
+        {
+            "name": "Direct Connect (No Steam Relay)",
+            "description": "Allow direct connection via IP+Port without Steam relay (0=Steam relay enabled, 1=Direct IP connection enabled). When enabled, players can connect directly to the server IP and port instead of using Steam relay.",
+            "env_variable": "ENABLE_DIRECT_CONNECT",
+            "default_value": "0",
+            "user_viewable": false,
+            "user_editable": false,
             "rules": "required|in:0,1",
             "field_type": "text"
         },
@@ -107,6 +136,16 @@
             "user_viewable": false,
             "user_editable": false,
             "rules": "nullable|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "SteamCMD Timeout (seconds)",
+            "description": "Maximum time to wait for each SteamCMD probe/update call before continuing startup (0 disables timeout).",
+            "env_variable": "SBOX_STEAMCMD_TIMEOUT",
+            "default_value": "600",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|numeric|between:0,7200",
             "field_type": "text"
         },
         {

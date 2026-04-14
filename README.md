@@ -52,6 +52,7 @@ Key details:
 | `MAX_PLAYERS` | Maximum player count | |
 | `SBOX_AUTO_UPDATE` | Run SteamCMD update on each boot (`0`/`1`) | `1` |
 | `SBOX_BRANCH` | Steam beta branch for updates (e.g. `staging`) | |
+| `SBOX_STEAMCMD_TIMEOUT` | Max seconds to wait for each SteamCMD probe/update call (`0` disables timeout) | `600` |
 | `QUERY_PORT` | Server query port for direct connect | |
 | `ENABLE_DIRECT_CONNECT` | Bypass Steam relay (`0`/`1`) | `0` |
 | `TOKEN` | Steam game server token | |
@@ -62,8 +63,10 @@ Key details:
 At container start, `Yolk/entrypoint.sh`:
 1. Seeds Wine prefix from baked template if not already present.
 2. Seeds S&Box server files from baked template if `/home/container/sbox` is missing or empty.
-3. Runs SteamCMD to update S&Box to the latest version (if `SBOX_AUTO_UPDATE=1`).
+3. Runs SteamCMD to update S&Box to the latest version (if `SBOX_AUTO_UPDATE=1`) with a bounded timeout per call.
 4. Launches `sbox-server.exe` under Wine with the configured arguments.
+
+If SteamCMD times out or fails but a previous `sbox-server.exe` exists, startup continues with existing files and the updater error is logged to `logs/sbox-update.log`.
 
 Project selection precedence:
 1. `SBOX_PROJECT` (resolved under `/home/container/projects/` or absolute path)
