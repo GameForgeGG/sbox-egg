@@ -423,16 +423,6 @@ run_sbox() {
         exit 1
     fi
 
-    # Backward compatibility: use HOSTNAME only when SERVER_NAME is empty and
-    # HOSTNAME does not look like a container ID.
-    if [ -z "${resolved_server_name}" ] && [ -n "${HOSTNAME_FALLBACK}" ] && [[ ! "${HOSTNAME_FALLBACK}" =~ ^[0-9a-f]{12,64}$ ]]; then
-        resolved_server_name="${HOSTNAME_FALLBACK}"
-    fi
-
-    if [ -n "${resolved_server_name}" ]; then
-        args+=( +hostname "${resolved_server_name}" )
-    fi
-
     if [ -n "${TOKEN}" ]; then
         args+=( +net_game_server_token "${TOKEN}" )
     fi
@@ -458,6 +448,10 @@ run_sbox() {
 
     if [ "${#cli_args[@]}" -gt 0 ]; then
         args+=( "${cli_args[@]}" )
+    fi
+
+    if [ -n "${resolved_server_name}" ]; then
+        args+=( +hostname "\"${resolved_server_name}\"" )
     fi
 
     unset DOTNET_ROOT DOTNET_ROOT_X86 DOTNET_ROOT_X64
