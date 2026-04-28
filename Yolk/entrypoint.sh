@@ -423,16 +423,6 @@ run_sbox() {
         exit 1
     fi
 
-    # Backward compatibility: use HOSTNAME only when SERVER_NAME is empty and
-    # HOSTNAME does not look like a container ID.
-    if [ -z "${resolved_server_name}" ] && [ -n "${HOSTNAME_FALLBACK}" ] && [[ ! "${HOSTNAME_FALLBACK}" =~ ^[0-9a-f]{12,64}$ ]]; then
-        resolved_server_name="${HOSTNAME_FALLBACK}"
-    fi
-
-    if [ -n "${resolved_server_name}" ]; then
-        args+=( +hostname "${resolved_server_name}" )
-    fi
-
     if [ -n "${TOKEN}" ]; then
         args+=( +net_game_server_token "${TOKEN}" )
     fi
@@ -460,6 +450,10 @@ run_sbox() {
         args+=( "${cli_args[@]}" )
     fi
 
+    if [ -n "${resolved_server_name}" ]; then
+        args+=( +hostname "\"${resolved_server_name}\"" )
+    fi
+
     unset DOTNET_ROOT DOTNET_ROOT_X86 DOTNET_ROOT_X64
 
     launch_env=(
@@ -470,19 +464,22 @@ run_sbox() {
         DOTNET_ZapDisable=1
     )
 
-    for arg in "${args[@]}"; do
-        if [[ "${arg}" == "+net_game_server_token" ]]; then
+    i=0
+    while [ $i -lt ${#args[@]} ]; do
+        arg="${args[$i]}"
+        if [[ "$arg" == "+net_game_server_token" ]]; then
             redacted_args+=( "+net_game_server_token" "[REDACTED]" )
-            # Skip the next iteration to avoid logging the actual token
+            i=$((i+2))
             continue
         fi
-
-        # Only add to redacted if we didn't just skip a token flag
-        if [ -z "${skip_next:-}" ]; then
-            redacted_args+=( "${arg}" )
-        else
-            unset skip_next
+        if [[ "$arg" == "+hostname" && $((i+1)) -lt ${#args[@]} ]]; then
+            # Always log +hostname and its value as a single quoted argument
+            redacted_args+=( "+hostname \"${args[$((i+1))]}\"" )
+            i=$((i+2))
+            continue
         fi
+        redacted_args+=( "$arg" )
+        i=$((i+1))
     done
 
     if [ "${ENABLE_DIRECT_CONNECT}" = "1" ]; then
