@@ -464,19 +464,22 @@ run_sbox() {
         DOTNET_ZapDisable=1
     )
 
-    for arg in "${args[@]}"; do
-        if [[ "${arg}" == "+net_game_server_token" ]]; then
+    i=0
+    while [ $i -lt ${#args[@]} ]; do
+        arg="${args[$i]}"
+        if [[ "$arg" == "+net_game_server_token" ]]; then
             redacted_args+=( "+net_game_server_token" "[REDACTED]" )
-            # Skip the next iteration to avoid logging the actual token
+            i=$((i+2))
             continue
         fi
-
-        # Only add to redacted if we didn't just skip a token flag
-        if [ -z "${skip_next:-}" ]; then
-            redacted_args+=( "${arg}" )
-        else
-            unset skip_next
+        if [[ "$arg" == "+hostname" && $((i+1)) -lt ${#args[@]} ]]; then
+            # Always log +hostname and its value as a single quoted argument
+            redacted_args+=( "+hostname \"${args[$((i+1))]}\"" )
+            i=$((i+2))
+            continue
         fi
+        redacted_args+=( "$arg" )
+        i=$((i+1))
     done
 
     if [ "${ENABLE_DIRECT_CONNECT}" = "1" ]; then
