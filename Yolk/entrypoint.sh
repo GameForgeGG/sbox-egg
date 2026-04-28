@@ -451,7 +451,7 @@ run_sbox() {
     fi
 
     if [ -n "${resolved_server_name}" ]; then
-        args+=( +hostname "\"${resolved_server_name}\"" )
+        args+=( +hostname "${resolved_server_name}" )
     fi
 
     unset DOTNET_ROOT DOTNET_ROOT_X86 DOTNET_ROOT_X64
@@ -473,8 +473,9 @@ run_sbox() {
             continue
         fi
         if [[ "$arg" == "+hostname" && $((i+1)) -lt ${#args[@]} ]]; then
-            # Always log +hostname and its value as a single quoted argument
-            redacted_args+=( "+hostname \"${args[$((i+1))]}\"" )
+            # Log +hostname and its value as two separate elements, but quote the value for the log output
+            redacted_args+=( "+hostname" )
+            redacted_args+=( "\"${args[$((i+1))]}\"" )
             i=$((i+2))
             continue
         fi
