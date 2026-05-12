@@ -353,6 +353,45 @@ update_sbox() {
 # MAIN SERVER EXECUTION
 # ============================================================================
 
+# Send a console command to the running server.
+# Wine headless servers do not expose a writable console stdin; this is a no-op stub.
+send_server_cmd() {
+    log_warn "send_server_cmd: '$*' ignored (console stdin not available in headless Wine)"
+}
+
+# Periodically count connected players by tailing the server log for
+# connect/disconnect events and write a snapshot to the metrics log.
+start_metrics_loop() {
+    local interval="${SBOX_METRICS_INTERVAL:-300}"
+    local metrics_log="${LOG_DIR}/sbox-metrics.log"
+    local player_count=0
+
+    (
+        # Wait for the server log to appear.
+        local waited=0
+        while [ ! -f "${LOG_FILE}" ] && [ "${waited}" -lt 30 ]; do
+            sleep 1
+            waited=$((waited+1))
+        done
+
+        while true; do
+            sleep "${interval}"
+            [ -f "${LOG_FILE}" ] || continue
+
+            # Count players by tallying connect/disconnect lines since boot.
+            local connects disconnects
+            connects=$(grep -c "is connected$" "${LOG_FILE}" 2>/dev/null || echo 0)
+            disconnects=$(grep -c "disconnected\|dropped\|timed out" "${LOG_FILE}" 2>/dev/null || echo 0)
+            player_count=$(( connects - disconnects ))
+            [ "${player_count}" -lt 0 ] && player_count=0
+
+            printf '[%s] METRICS: players_online=%d (connects=%d disconnects=%d)\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" "${player_count}" "${connects}" "${disconnects}" \
+                | tee -a "${metrics_log}"
+        done
+    ) &
+}
+
 run_sbox() {
     local -a cli_args=("$@")
     local -a args=()
@@ -429,14 +468,14 @@ run_sbox() {
         args+=( +hostname "${resolved_server_name}" )
     fi
 
-    unset DOTNET_ROOT DOTNET_ROOT_X86 DOTNET_ROOT_X64
-
     launch_env=(
         LD_LIBRARY_PATH=/usr/lib:/lib
         DOTNET_EnableWriteXorExecute=0
         DOTNET_TieredCompilation=0
         DOTNET_ReadyToRun=0
         DOTNET_ZapDisable=1
+        DOTNET_ROOT_X64=Z:\\opt\\sbox-dotnet
+        DOTNET_ROOT=Z:\\opt\\sbox-dotnet
     )
 
     i=0
@@ -479,16 +518,18 @@ run_sbox() {
         log_error "Linux native runtime mode is not yet supported; please switch to wine or proton while this is being worked on and tested"
         exit 1
     else # default to wine
-        set +e
-        env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}" 2>&1 | tee -a "${LOG_FILE}"
-        server_status=${PIPESTATUS[0]}
-        set -e
+        # Redirect stdout/stderr to the log BEFORE exec so the log pipe is
+        # inherited by Wine. stdin stays as the TTY so console input works.
+        # exec replaces the shell so Wine becomes the terminal owner (no child process).
+        exec > >(tee -a "${LOG_FILE}") 2>&1
+        exec env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}"
     fi
 
+    # Unreachable for wine (exec above never returns).
+    # Retained for proton/linux paths that fall through.
 
-
-
-    if [ "${server_status}" -ne 0 ]; then
+    # Exit codes 130 (SIGINT/^C) and 143 (SIGTERM) are clean shutdowns, not errors.
+    if [ "${server_status}" -ne 0 ] && [ "${server_status}" -ne 130 ] && [ "${server_status}" -ne 143 ]; then
         log_error "sbox-server exited with status ${server_status}"
         log_error "startup failed after launch command; inspect recent Wine output above for root cause"
     fi
@@ -510,7 +551,8 @@ if [ "${1:-}" = "" ] || [[ "${1}" = +* ]]; then
     if [ "${SBOX_AUTO_UPDATE}" = "1" ] || [ ! -f "${SBOX_SERVER_EXE}" ]; then
         update_sbox
     fi
-    
+
+    start_metrics_loop
     run_sbox "$@"
 fi
 
