@@ -30,9 +30,8 @@ RUNTIME_MODE="${RUNTIME_MODE:-wine}"
 
 # Logging
 LOG_DIR="${CONTAINER_HOME}/logs"
-LOG_FILE="${LOG_DIR}/sbox-server.log"
-ERROR_LOG="${LOG_DIR}/sbox-error.log"
 UPDATE_LOG="${LOG_DIR}/sbox-update.log"
+SBOX_LOG="${SBOX_INSTALL_DIR}/logs/sbox-server.log"
 
 # ============================================================================
 # LOGGING FUNCTIONS
@@ -40,15 +39,15 @@ UPDATE_LOG="${LOG_DIR}/sbox-update.log"
 mkdir -p "${LOG_DIR}"
 
 log_info() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $*" | tee -a "${LOG_FILE}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $*"
 }
 
 log_warn() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $*" | tee -a "${LOG_FILE}" >&2
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: $*" >&2
 }
 
 log_error() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "${ERROR_LOG}" >&2
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" >&2
 }
 
 # ============================================================================
@@ -369,19 +368,19 @@ start_metrics_loop() {
     (
         # Wait for the server log to appear.
         local waited=0
-        while [ ! -f "${LOG_FILE}" ] && [ "${waited}" -lt 30 ]; do
+        while [ ! -f "${SBOX_LOG}" ] && [ "${waited}" -lt 30 ]; do
             sleep 1
             waited=$((waited+1))
         done
 
         while true; do
             sleep "${interval}"
-            [ -f "${LOG_FILE}" ] || continue
+            [ -f "${SBOX_LOG}" ] || continue
 
             # Count players by tallying connect/disconnect lines since boot.
             local connects disconnects
-            connects=$(grep -c "is connected$" "${LOG_FILE}" 2>/dev/null || echo 0)
-            disconnects=$(grep -c "disconnected\|dropped\|timed out" "${LOG_FILE}" 2>/dev/null || echo 0)
+            connects=$(grep -c "is connected$" "${SBOX_LOG}" 2>/dev/null || echo 0)
+            disconnects=$(grep -c "disconnected\|dropped\|timed out" "${SBOX_LOG}" 2>/dev/null || echo 0)
             player_count=$(( connects - disconnects ))
             [ "${player_count}" -lt 0 ] && player_count=0
 
@@ -518,10 +517,8 @@ run_sbox() {
         log_error "Linux native runtime mode is not yet supported; please switch to wine or proton while this is being worked on and tested"
         exit 1
     else # default to wine
-        # Redirect stdout/stderr to the log BEFORE exec so the log pipe is
-        # inherited by Wine. stdin stays as the TTY so console input works.
-        # exec replaces the shell so Wine becomes the terminal owner (no child process).
-        exec > >(tee -a "${LOG_FILE}") 2>&1
+        # S&Box writes its own logs to ${SBOX_INSTALL_DIR}/logs/sbox-server.log.
+        # Pass wine stdout/stderr straight to the console with no extra pipe.
         exec env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}"
     fi
 
