@@ -4,8 +4,6 @@ set -euo pipefail
 # Pre flight checks and variable defaults
 CONTAINER_HOME="${CONTAINER_HOME:-/home/container}"
 WINEPREFIX="${WINEPREFIX:-/home/container/.wine}"
-BAKED_WINEPREFIX="${SBOX_BAKED_WINEPREFIX:-/opt/sbox-wine-prefix}"
-BAKED_SERVER_TEMPLATE="${SBOX_BAKED_SERVER_TEMPLATE:-/opt/sbox-server-template}"
 
 # S&Box Specific variables with defaults
 SBOX_INSTALL_DIR="${SBOX_INSTALL_DIR:-/home/container/sbox}"
@@ -59,40 +57,9 @@ log_error() {
 # ============================================================================
 
 seed_runtime_files() {
-    local seed_sbox=0
-    local seed_reason=""
-    local baked_server_exe="${BAKED_SERVER_TEMPLATE}/sbox-server.exe"
-
-    if [ ! -d "${SBOX_INSTALL_DIR}" ]; then
-        seed_sbox=1
-        seed_reason="missing install directory"
-    elif [ -z "$(find "${SBOX_INSTALL_DIR}" -mindepth 1 -print -quit 2>/dev/null)" ]; then
-        seed_sbox=1
-        seed_reason="empty install directory"
-    fi
-
+    # Ensure runtime directories exist before SteamCMD updates/install.
     mkdir -p "${WINEPREFIX}"
-
-    if [ "${seed_sbox}" = "1" ]; then
-        mkdir -p "${SBOX_INSTALL_DIR}"
-    fi
-
-    if [ ! -f "${WINEPREFIX}/system.reg" ] && [ -d "${BAKED_WINEPREFIX}/drive_c" ]; then
-        log_info "seeding Wine prefix from ${BAKED_WINEPREFIX}"
-        cp -r "${BAKED_WINEPREFIX}/." "${WINEPREFIX}/"
-    fi
-
-    if [ "${seed_sbox}" = "1" ] && [ -f "${baked_server_exe}" ]; then
-        log_info "seeding S&Box files from ${BAKED_SERVER_TEMPLATE} (${seed_reason})"
-        cp -r "${BAKED_SERVER_TEMPLATE}/." "${SBOX_INSTALL_DIR}/"
-        if [ -f "${SBOX_SERVER_EXE}" ]; then
-            log_info "prebaked S&Box seed complete (${SBOX_SERVER_EXE})"
-        else
-            log_warn "prebaked seed copy completed but ${SBOX_SERVER_EXE} is still missing"
-        fi
-    elif [ "${seed_sbox}" = "1" ]; then
-        log_warn "${SBOX_INSTALL_DIR} requires reseed (${seed_reason}) but prebaked Windows template is missing ${baked_server_exe}"
-    fi
+    mkdir -p "${SBOX_INSTALL_DIR}"
 }
 
 # ============================================================================
