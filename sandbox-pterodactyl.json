@@ -9,7 +9,7 @@
     "description": "s&box dedicated server using a custom runtime image with baked Wine + Windows .NET.",
     "features": [],
     "docker_images": {
-        "ghcr.io\/GameForgeGG\/sbox-egg:latest": "ghcr.io\/GameForgeGG\/sbox-egg:latest"
+        "ghcr.io\/gameforgegg\/sbox-egg:latest": "ghcr.io\/gameforgegg\/sbox-egg:latest"
     },
     "file_denylist": [],
     "startup": "start-sbox",
@@ -157,13 +157,23 @@
             "field_type": "text"
         },
         {
-            "name": "runtime mode",
-            "description": "Select between Wine, Proton, or Linux Native runtime. (currently we recommend sticking to wine while the others are worked on and tested)",
+            "name": "Runtime Mode",
+            "description": "Select runtime backend: wine (recommended), proton (experimental), or linux (reserved for future native runtime support).",
             "env_variable": "RUNTIME_MODE",
             "default_value": "wine",
             "user_viewable": false,
             "user_editable": false,
             "rules": "required|in:wine,proton,linux",
+            "field_type": "text"
+        },
+        {
+            "name": "SteamCMD Extra Args",
+            "description": "Optional extra arguments passed to SteamCMD on update (for example: +@bClientDownloadUseHTTPS 0 \n +@ForceContentServerHTTPS 0).",
+            "env_variable": "STEAMCMD_EXTRA_ARGS",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "nullable|string|max:256",
             "field_type": "text"
         }
     ]

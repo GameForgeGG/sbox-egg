@@ -12,6 +12,7 @@ SBOX_APP_ID="${SBOX_APP_ID:-1892930}"
 SBOX_AUTO_UPDATE="${SBOX_AUTO_UPDATE:-1}"
 SBOX_BRANCH="${SBOX_BRANCH:-}"
 SBOX_STEAMCMD_TIMEOUT="${SBOX_STEAMCMD_TIMEOUT:-600}"
+STEAMCMD_EXTRA_ARGS="${STEAMCMD_EXTRA_ARGS:-}"
 
 # Optional server configuration variables
 GAME="${GAME:-}"
@@ -272,6 +273,14 @@ update_sbox() {
         +@ShutdownOnFailedCommand 1
         +@NoPromptForPassword 1
         +@sSteamCmdForcePlatformType "${force_platform}"
+    )
+
+    if [ -n "${STEAMCMD_EXTRA_ARGS}" ]; then
+        read -ra _extra_args <<< "${STEAMCMD_EXTRA_ARGS}"
+        steam_args+=( "${_extra_args[@]}" )
+    fi
+
+    steam_args+=(
         +force_install_dir "${SBOX_INSTALL_DIR}"
         +login anonymous
         +app_update "${SBOX_APP_ID}"
