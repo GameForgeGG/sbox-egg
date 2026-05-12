@@ -77,7 +77,7 @@ Project selection precedence:
 1. Import the appropriate egg into your panel:
   - **Pterodactyl**: import `sandbox-pterodactyl.json`
   - **Pelican**: import `sandbox-pelican.json`
-2. Set the Docker image to `ghcr.io/hyberhost/gameforge-sbox-egg:latest` (or your own build — see `Yolk/README.md`).
+2. Set the Docker image to `ghcr.io/GameForgeGG/sbox-egg:latest` (or your own build — see `Yolk/README.md`).
 3. Create a server and configure variables.
 4. Start the server. On first boot it will seed files and run the updater before launching.
 

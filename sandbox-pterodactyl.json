@@ -9,7 +9,7 @@
     "description": "s&box dedicated server using a custom runtime image with baked Wine + Windows .NET.",
     "features": [],
     "docker_images": {
-        "ghcr.io\/hyberhost\/gameforge-sbox-egg:latest": "ghcr.io\/hyberhost\/gameforge-sbox-egg:latest"
+        "ghcr.io\/GameForgeGG\/sbox-egg:latest": "ghcr.io\/GameForgeGG\/sbox-egg:latest"
     },
     "file_denylist": [],
     "startup": "start-sbox",

@@ -13,7 +13,7 @@ on:
     - cron: "0 3 */3 * *" # every 3 days at 3am UTC
 
 concurrency:
-  group: ghcr-gameforge-sbox-egg-${{ github.ref }}
+  group: ghcr-sbox-egg-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/hyberhost/gameforge-sbox-egg
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=main,enable={{is_default_branch}}

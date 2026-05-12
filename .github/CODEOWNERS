@@ -3,21 +3,21 @@
 # Team format: @org/team-name
 
 # Default owner for the entire repository
-* @HyberHost/egg-maintainers
+* @GameForgeGG/egg-maintainers
 
 # Runtime/image files
-/Yolk/ @HyberHost/egg-maintainers
+/Yolk/ @GameForgeGG/egg-maintainers
 
 # Reference assets
-/ref/ @HyberHost/egg-maintainers
+/ref/ @GameForgeGG/egg-maintainers
 
 # Shell scripts
-*.sh @HyberHost/egg-maintainers
+*.sh @GameForgeGG/egg-maintainers
 
 # Pterodactyl egg/panel config
-/sandbox-pterodactyl.json @HyberHost/egg-maintainers
+/sandbox-pterodactyl.json @GameForgeGG/egg-maintainers
 
 # GitHub settings and governance files
-/.github/ @HyberHost/management @HyberHost/egg-maintainers
-/CONTRIBUTING.md @HyberHost/management @HyberHost/egg-maintainers
-/README.md @HyberHost/management @HyberHost/egg-maintainers
+/.github/ @GameForgeGG/management @GameForgeGG/egg-maintainers
+/CONTRIBUTING.md @GameForgeGG/management @GameForgeGG/egg-maintainers
+/README.md @GameForgeGG/management @GameForgeGG/egg-maintainers

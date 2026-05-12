@@ -10,7 +10,7 @@
 # Build from the repo root:
 #   docker build --platform linux/amd64 \
 #     -f Yolk/DockerFile \
-#     -t hyberhost/gameforge-sbox-egg:latest \
+#     -t GameForgeGG/sbox-egg:latest:latest \
 #     [--build-arg BAKE_WIN_DOTNET_VERSION=10.0.2] \
 #     .
 
@@ -100,12 +100,12 @@ RUN if ! find /work/wineprefix/drive_c -name hostfxr.dll 2>/dev/null | grep -q .
 # ─────────────────────────────────────────────────────────────────────────────
 FROM steamcmd/steamcmd:alpine
 
-LABEL author="Steven A. Smith" maintainer="steven.smith@hyberhost.com"
-LABEL description="s&box Pterodactyl Egg" version="2.1" license="MIT"
+LABEL author="Steven A. Smith" maintainer="team@gameforge.gg"
+LABEL description="s&box Pterodactyl Egg" version="2.2" license="MIT"
 LABEL org.opencontainers.image.authors="Steven A. Smith" \
       org.opencontainers.image.description="s&box Game Server Egg" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.source="https://github.com/HyberHost/GameForge-sbox-egg"
+      org.opencontainers.image.source="https://github.com/GameForgeGG/sbox-egg"
 
 ARG PUID=999
 ARG PGID=999
