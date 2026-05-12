@@ -29,9 +29,9 @@
     "variables": [
         {
             "name": "Game",
-            "description": "Primary game package passed to +game (for example: facepunch.walker).",
+            "description": "Game package identifier, typically org.package (for example: facepunch.walker).",
             "env_variable": "GAME",
-            "default_value": "facepunch.walker",
+            "default_value": "strikeforce.strikeforce",
             "user_viewable": true,
             "user_editable": true,
             "rules": "nullable|string|max:64",
@@ -49,7 +49,7 @@
         },
         {
             "name": "Map",
-            "description": "Optional map/package identifier loaded after +game. Leave blank to use the game default (for example: facepunch.flatgrass).",
+            "description": "Optional map/package identifier loaded after +game.",
             "env_variable": "MAP",
             "default_value": "",
             "user_viewable": true,
@@ -69,7 +69,7 @@
         },
         {
             "name": "Extra Args",
-            "description": "Optional extra launch arguments appended to sbox-server.exe, some gamemodes may require additional arguments to function properly. Use with caution.",
+            "description": "Optional extra arguments. Use with caution.",
             "env_variable": "SBOX_EXTRA_ARGS",
             "default_value": "",
             "user_viewable": true,
@@ -79,7 +79,7 @@
         },
         {
             "name": "Max Players",
-            "description": "Maximum number of players allowed on the server. (This depends on gamemode support, setting this may cause issues)",
+            "description": "Maximum number of players allowed on the server. (Depending on the game mode, this may cause issues if set too high)",
             "env_variable": "MAX_PLAYERS",
             "default_value": "",
             "user_viewable": true,
@@ -108,7 +108,7 @@
         },
         {
             "name": "Direct Connect (No Steam Relay)",
-            "description": "Allow direct connection via IP+Port without Steam relay (0=Steam relay enabled, 1=Direct IP connection enabled). When enabled, players can connect directly to the server IP and port instead of using Steam relay.",
+            "description": "EXPERIMENTAL: Allow direct connection via IP+Port, players can connect directly to the server IP and port instead of using Steam relay.",
             "env_variable": "ENABLE_DIRECT_CONNECT",
             "default_value": "0",
             "user_viewable": false,
@@ -118,12 +118,12 @@
         },
         {
             "name": "Game Server Token",
-            "description": "Optional Steam game server token passed as +net_game_server_token.",
+            "description": "Optional Steam game server token passed as +net_game_server_token, get your token here: https:\/\/steamcommunity.com\/dev\/managegameservers",
             "env_variable": "TOKEN",
             "default_value": "",
             "user_viewable": false,
             "user_editable": false,
-            "rules": "nullable|string|max:255",
+            "rules": "nullable|alpha_num|min:24|max:64",
             "field_type": "text"
         },
         {
@@ -154,6 +154,16 @@
             "user_viewable": false,
             "user_editable": false,
             "rules": "required|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "runtime mode",
+            "description": "Select between Wine, Proton, or Linux Native runtime. (currently we recommend sticking to wine while the others are worked on and tested)",
+            "env_variable": "RUNTIME_MODE",
+            "default_value": "wine",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|in:wine,proton,linux",
             "field_type": "text"
         }
     ]

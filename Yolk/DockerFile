@@ -43,6 +43,7 @@ ENV CONTAINER_HOME=/home/container \
     SERVER_NAME= \
     SBOX_PROJECT= \
     SBOX_EXTRA_ARGS= \
+    RUNTIME_MODE=wine \
     XDG_RUNTIME_DIR=/tmp
 
 RUN apk add --no-cache \

@@ -10,7 +10,7 @@ on:
       - .github/workflows/build-and-publish.yml
   workflow_dispatch:
   schedule:
-    - cron: "0 3 */3 * *" # every 3 days at 3am UTC
+    - cron: "0 22 */7 * *" # every 7 days at 10pm UTC
 
 concurrency:
   group: ghcr-sbox-egg-${{ github.ref }}

@@ -25,9 +25,7 @@ TOKEN="${TOKEN:-}"
 SBOX_PROJECT="${SBOX_PROJECT:-}"
 SBOX_PROJECTS_DIR="${SBOX_PROJECTS_DIR:-${CONTAINER_HOME}/projects}"
 SBOX_EXTRA_ARGS="${SBOX_EXTRA_ARGS:-}"
-
-# Computed variables
-SERVER_PID=""
+RUNTIME_MODE="${RUNTIME_MODE:-wine}"
 
 # Logging
 LOG_DIR="${CONTAINER_HOME}/logs"
@@ -356,6 +354,7 @@ run_sbox() {
     local resolved_server_name="${SERVER_NAME}"
     local cli_has_game_flag=0
     local cli_arg=""
+    local server_status=0
 
     if [ ! -f "${SBOX_SERVER_EXE}" ]; then
         log_error "${SBOX_SERVER_EXE} was not found. Cannot start S&Box server."
@@ -455,14 +454,37 @@ run_sbox() {
     else
         log_info "Starting S&Box server in Steam relay mode"
     fi
-    log_info "Command: wine \"${SBOX_SERVER_EXE}\" ${redacted_args[*]}"
+    log_info "Command: ${RUNTIME_MODE} \"${SBOX_SERVER_EXE}\" ${redacted_args[*]}"
 
     cd "${SBOX_INSTALL_DIR}"
-    # Run server in foreground so Pterodactyl can track the main process.
-    # Tee stdout to `${LOG_FILE}` and stderr to `${ERROR_LOG}` while preserving console output.
-    exec env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}" \
-        > >(tee -a "${LOG_FILE}") \
-        2> >(tee -a "${ERROR_LOG}" >&2)
+
+    if [ "${RUNTIME_MODE}" = "proton" ]; then
+        if [ -x "/home/container/.local/share/Proton/proton" ]; then
+            launch_env+=( STEAM_COMPAT_DATA_PATH="${WINEPREFIX}" )
+            exec "/home/container/.local/share/Proton/proton" run "${SBOX_SERVER_EXE}" "${args[@]}"
+        else
+            log_error "Proton runtime selected but /home/container/.local/share/Proton/proton not found or not executable"
+            exit 1
+        fi
+    elif [ "${RUNTIME_MODE}" = "linux" ]; then
+        log_error "Linux native runtime mode is not yet supported; please switch to wine or proton while this is being worked on and tested"
+        exit 1
+    else # default to wine
+        set +e
+        env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}" 2>&1 | tee -a "${LOG_FILE}"
+        server_status=${PIPESTATUS[0]}
+        set -e
+    fi
+
+
+
+
+    if [ "${server_status}" -ne 0 ]; then
+        log_error "sbox-server exited with status ${server_status}"
+        log_error "startup failed after launch command; inspect recent Wine output above for root cause"
+    fi
+
+    exit "${server_status}"
 }
 
 # ============================================================================
@@ -477,7 +499,6 @@ seed_runtime_files
 
 if [ "${1:-}" = "" ] || [[ "${1}" = +* ]]; then
     if [ "${SBOX_AUTO_UPDATE}" = "1" ] || [ ! -f "${SBOX_SERVER_EXE}" ]; then
-        log_info "updating S&Box server files on boot..."
         update_sbox
     fi
     
