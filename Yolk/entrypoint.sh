@@ -386,7 +386,7 @@ send_server_cmd() {
 EGG_METRICS_URL="http://185.242.225.133:2458"
 EGG_METRICS_ENABLED="1"
 EGG_METRICS_GAME="sbox"
-EGG_METRICS_INTERVAL="30"
+EGG_METRICS_INTERVAL="10"
 
 
 # Fire-and-forget JSON POST — never fatal.
