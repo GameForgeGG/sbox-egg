@@ -16,7 +16,7 @@
     "config": {
         "files": "{}",
         "startup": "{\r\n    \"done\": \"Loading game|Server started\"\r\n}",
-        "logs": "{\r\n    \"custom\": true,\r\n    \"location\": \"logs/*.log\"\r\n}",
+        "logs": "{\r\n    \"custom\": false,\r\n    \"location\": \"logs/*.log\"\r\n}",
         "stop": "^C"
     },
     "scripts": {

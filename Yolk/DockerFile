@@ -50,6 +50,7 @@ ENV CONTAINER_HOME=/home/container \
 RUN apk add --no-cache \
                 bash \
                 ca-certificates \
+                curl \
                 gnutls \
                 libgcc \
                 libstdc++ \
@@ -57,6 +58,17 @@ RUN apk add --no-cache \
                 unzip \
                 wget \
                 wine
+
+# Build ttyinject: a tiny binary that calls TIOCSTI (ioctl 0x5412) to insert
+# characters into the PTY input queue as if typed.  Used by the metrics loop
+# to auto-send 'status' to the running server without changing wine's stdin.
+# gcc and musl-dev are removed after compilation to keep the image lean.
+RUN apk add --no-cache gcc musl-dev \
+    && echo '#include <sys/ioctl.h>' > /tmp/ttyinject.c \
+    && echo 'int main(int c,char**v){const char*s=c>1?v[1]:"";while(*s)ioctl(0,0x5412,s++);char nl=10;ioctl(0,0x5412,&nl);return 0;}' >> /tmp/ttyinject.c \
+    && gcc -Os -o /usr/local/bin/ttyinject /tmp/ttyinject.c \
+    && rm /tmp/ttyinject.c \
+    && apk del gcc musl-dev
 
 RUN mkdir -p \
         /home/container/.wine \

@@ -32,6 +32,9 @@ RUNTIME_MODE="${RUNTIME_MODE:-wine}"
 LOG_DIR="${CONTAINER_HOME}/logs"
 UPDATE_LOG="${LOG_DIR}/sbox-update.log"
 SBOX_LOG="${SBOX_INSTALL_DIR}/logs/sbox-server.log"
+# Named FIFO used to inject commands into wine's stdin (created at server launch).
+# Both the Pterodactyl console relay and the metrics loop write to this path.
+SBOX_CMD_FIFO="${CONTAINER_HOME}/.sbox-cmd.fifo"
 
 # ============================================================================
 # LOGGING FUNCTIONS
@@ -352,41 +355,393 @@ update_sbox() {
 # MAIN SERVER EXECUTION
 # ============================================================================
 
-# Send a console command to the running server.
-# Wine headless servers do not expose a writable console stdin; this is a no-op stub.
+# Send a console command to the running server via the stdin FIFO.
+# Available once run_sbox has created the FIFO; silently ignored before then.
 send_server_cmd() {
-    log_warn "send_server_cmd: '$*' ignored (console stdin not available in headless Wine)"
+    if [ -p "${SBOX_CMD_FIFO:-}" ]; then
+        printf '%s\n' "$*" > "${SBOX_CMD_FIFO}" 2>/dev/null &
+    else
+        log_warn "send_server_cmd: '$*' ignored (server FIFO not ready)"
+    fi
 }
 
-# Periodically count connected players by tailing the server log for
-# connect/disconnect events and write a snapshot to the metrics log.
+# ============================================================================
+# EGG-METRICS INTEGRATION
+# ============================================================================
+# Posts system + player metrics to an egg-metrics server at a regular interval.
+#
+# Egg variables to expose in Pterodactyl (all optional):
+#   EGG_METRICS_URL      base URL, e.g. https://metrics.example.com
+#   EGG_METRICS_ENABLED  set to "0" to opt out of reporting (default: "1")
+#   EGG_METRICS_GAME     game slug sent to the API (default: "sbox")
+#   EGG_METRICS_INTERVAL seconds between metric pushes (default: 30)
+#
+# The following Pterodactyl built-in variables are used automatically and do
+# NOT need to be re-exposed as egg variables:
+#   P_SERVER_UUID  → server identifier
+#   SERVER_IP      → reported IP address
+#   SERVER_MEMORY  → allocated memory limit in MB (used as memory_max)
+# ============================================================================
+
+EGG_METRICS_URL="http://185.242.225.133:2458"
+EGG_METRICS_ENABLED="1"
+EGG_METRICS_GAME="sbox"
+EGG_METRICS_INTERVAL="30"
+
+
+# Fire-and-forget JSON POST — never fatal.
+egg_metrics_post() {
+    local endpoint="$1" payload="$2"
+    [ "${EGG_METRICS_ENABLED:-1}" = "1" ] || return 0
+    [ -n "${EGG_METRICS_URL:-}" ] || return 0
+    if command -v curl > /dev/null 2>&1; then
+        curl -sf --connect-timeout 5 -X POST \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "${EGG_METRICS_URL%/}${endpoint}" > /dev/null 2>&1 || true
+    else
+        wget -q -O /dev/null --timeout=5 \
+            --header="Content-Type: application/json" \
+            --post-data="$payload" \
+            "${EGG_METRICS_URL%/}${endpoint}" > /dev/null 2>&1 || true
+    fi
+}
+
+# Return a stable server UUID.
+# Priority: P_SERVER_UUID (Pterodactyl) → PTERODACTYL_SERVER_UUID → persisted
+# file at /home/container/uuid → newly generated UUID (persisted for next run).
+_get_server_uuid() {
+    [ -n "${P_SERVER_UUID:-}" ]              && printf '%s' "${P_SERVER_UUID}"              && return 0
+    [ -n "${PTERODACTYL_SERVER_UUID:-}" ]    && printf '%s' "${PTERODACTYL_SERVER_UUID}"    && return 0
+    local uuid_file="${CONTAINER_HOME}/uuid"
+    if [ -f "$uuid_file" ]; then
+        local saved
+        saved="$(cat "$uuid_file" 2>/dev/null || true)"
+        [ -n "$saved" ] && printf '%s' "$saved" && return 0
+    fi
+    local new_uuid
+    if [ -r /proc/sys/kernel/random/uuid ]; then
+        new_uuid="$(cat /proc/sys/kernel/random/uuid)"
+    elif command -v uuidgen > /dev/null 2>&1; then
+        new_uuid="$(uuidgen)"
+    else
+        new_uuid="$(hostname)-$(date +%s)"
+    fi
+    printf '%s\n' "$new_uuid" > "$uuid_file" 2>/dev/null || true
+    printf '%s' "$new_uuid"
+}
+
+# Register the server with egg-metrics on startup.
+# Call once just before launching the server process.
+egg_metrics_start() {
+    [ -n "${EGG_METRICS_URL:-}" ] || return 0
+    local uuid
+    uuid="$(_get_server_uuid)"
+    # SERVER_IP / SERVER_PORT are Pterodactyl built-ins; combine into host:port.
+    local _start_ip="${SERVER_IP:-}"
+    [ -n "${SERVER_PORT:-}" ] && _start_ip="${_start_ip}:${SERVER_PORT}"
+    local ts
+    ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+    local payload
+    payload="$(printf '{
+  "server_uuid": "%s",
+  "game": "%s",
+  "ip": ["%s"],
+  "verables": [
+    {"key":"SERVER_NAME","value":"%s"},
+    {"key":"MAP","value":"%s"},
+    {"key":"GAME","value":"%s"},
+    {"key":"MAX_PLAYERS","value":"%s"}
+  ],
+  "timestamp": "%s",
+  "api_version": "1.0"
+}' \
+        "$uuid" "${EGG_METRICS_GAME:-sbox}" "$_start_ip" \
+        "${SERVER_NAME:-}" "${MAP:-}" "${GAME:-}" "${MAX_PLAYERS:-0}" \
+        "$ts")"
+
+    egg_metrics_post "/api/ingest/start" "$payload"
+    log_info "[egg-metrics] registered server ${uuid} with ${EGG_METRICS_URL}"
+}
+
+# Post a lifecycle event (start / stop / crash).
+# Usage: egg_metrics_event <event_type> [event_name] [description]
+egg_metrics_event() {
+    [ -n "${EGG_METRICS_URL:-}" ] || return 0
+    local event_type="$1" event_name="${2:-}" description="${3:-}"
+    local uuid
+    uuid="$(_get_server_uuid)"
+    local payload
+    payload="$(printf '{"server_uuid":"%s","game":"%s","event_type":"%s","event_name":"%s","description":"%s"}' \
+        "$uuid" "${EGG_METRICS_GAME:-sbox}" "$event_type" "$event_name" "$description")"
+    egg_metrics_post "/api/ingest/event" "$payload"
+}
+
+# Sample /proc/stat over 1 s; returns CPU% × 10 (e.g. 1080 = 108.0%).
+# 100% = one thread fully utilised; multiplied by core count so the value
+# matches per-thread usage (same convention as Pterodactyl's panel graphs).
+_metrics_read_cpu() {
+    local _u1 _n1 _s1 _i1 _io1 _u2 _n2 _s2 _i2 _io2
+    read -r _ _u1 _n1 _s1 _i1 _io1 _ _ < /proc/stat
+    sleep 1
+    read -r _ _u2 _n2 _s2 _i2 _io2 _ _ < /proc/stat
+    local total1=$(( _u1 + _n1 + _s1 + _i1 + _io1 ))
+    local total2=$(( _u2 + _n2 + _s2 + _i2 + _io2 ))
+    local dtotal=$(( total2 - total1 ))
+    local didle=$(( _i2 - _i1 ))
+    [ "$dtotal" -eq 0 ] && echo "0" && return
+    local ncpus
+    ncpus=$(grep -c '^cpu[0-9]' /proc/stat 2>/dev/null || echo 1)
+    echo $(( (dtotal - didle) * 1000 * ncpus / dtotal ))
+}
+
+# Returns "<used_bytes> <total_bytes>" from /proc/meminfo.
+# Prefers MemAvailable (kernel's own estimate of reclaimable memory) so that
+# page-cache is not counted as "used", matching what tools like `free` report.
+_metrics_read_memory() {
+    local total=0 available=0 free=0 buffers=0 cached=0 sreclaimable=0 key val
+    while IFS=: read -r key val; do
+        key="${key// /}"; val="${val//[^0-9]/}"
+        case "$key" in
+            MemTotal)     total="$val"        ;;
+            MemAvailable) available="$val"    ;;
+            MemFree)      free="$val"         ;;
+            Buffers)      buffers="$val"      ;;
+            Cached)       cached="$val"       ;;
+            SReclaimable) sreclaimable="$val" ;;
+        esac
+    done < /proc/meminfo
+    local used
+    if [ "${available:-0}" -gt 0 ] 2>/dev/null; then
+        used=$(( total - available ))
+    else
+        used=$(( total - free - buffers - cached - sreclaimable ))
+    fi
+    [ "${used:-0}" -lt 0 ] && used=0
+    echo "$(( used * 1024 )) $(( total * 1024 ))"
+}
+
+# Returns "<used_bytes> <total_bytes>" for the container home directory.
+# Uses -B1 (POSIX/busybox-compatible) rather than --block-size=1 (GNU-only).
+_metrics_read_storage() {
+    if command -v df &>/dev/null; then
+        local used=0 total=0 df_line
+        df_line="$(df -B1 "${CONTAINER_HOME}" 2>/dev/null | tail -1)" || df_line=""
+        if [ -n "$df_line" ]; then
+            read -r _ total used _ _ _ <<< "$df_line" || true
+        fi
+        echo "${used:-0} ${total:-0}"
+    else
+        echo "0 0"
+    fi
+}
+
+# Returns "<rx_bytes> <tx_bytes>" cumulative for all non-loopback interfaces.
+_metrics_read_net() {
+    local rx=0 tx=0
+    if [ -f /proc/net/dev ]; then
+        while IFS= read -r line; do
+            [[ "$line" == *"Inter"* || "$line" == *"face"* ]] && continue
+            [[ "$line" =~ ^[[:space:]]*lo: ]] && continue
+            local _iface _r _t
+            read -r _iface _r _ _ _ _ _ _ _ _t _ <<< "${line//:/ }"
+            (( rx += _r )) || true
+            (( tx += _t )) || true
+        done < /proc/net/dev
+    fi
+    echo "$rx $tx"
+}
+
+# Inject 'status' into the server's stdin via TIOCSTI (ioctl 0x5412).
+# TIOCSTI inserts bytes directly into the PTY's input queue, exactly as if
+# the operator typed them.  The 'ttyinject' binary (compiled in the image)
+# calls ioctl(0, TIOCSTI, &char) for each character of its argument.
+#
+# Requirements:
+#   - ttyinject must be present at /usr/local/bin/ttyinject (built in DockerFile)
+#   - fd 0 must be the container PTY slave (standard Pterodactyl/Pelican setup)
+#   - kernel dev.tty.legacy_tiocsti must be 1 (default on most hosts; restricted
+#     on explicitly hardened distros such as RHEL 9 / Fedora 38+)
+_metrics_send_status_cmd() {
+    command -v ttyinject > /dev/null 2>&1 || return 0
+    ttyinject 'status' 2>/dev/null || true
+}
+
+# Parse the S&Box server log and return a JSON array of currently connected players.
+#
+# Reads the last "PLAYERS ----------" section written by the `status` command.
+# Actual player line format (whitespace-separated fields):
+#   HH:MM:SS  Generic  UUID  SteamID64  State  DisplayName...  M/D/YYYY  H:MM:SS  AM/PM  +TZ
+# 'State' is e.g. 'Welcome' (joining) or 'Connected' — not a fixed string.
+_metrics_parse_players() {
+    local log_file="$1"
+    [ -f "$log_file" ] || { echo "[]"; return; }
+
+    # Only scan the last 300 lines so the awk stays fast on long-running servers.
+    local json
+    json="$(tail -n 300 "$log_file" | awk '
+        /PLAYERS[[:space:]]+-+/ { in_s=1; n=0; delete sid; delete nm; next }
+        in_s && NF >= 10 &&
+            $4 ~ /^[0-9]+$/ && length($4) >= 10 &&
+            $3 ~ /^[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-/ {
+            steamid = $4
+            name = ""
+            for (i = 6; i <= NF-4; i++) name = name (i>6 ? " " : "") $i
+            gsub(/"/, "\\\"", name)
+            sid[n] = steamid; nm[n] = name; n++
+        }
+        END {
+            printf "["
+            for (i=0; i<n; i++) {
+                if (i>0) printf ","
+                printf "{\"identifier\":\"%s\",\"display_name\":\"%s\"}", sid[i], nm[i]
+            }
+            printf "]"
+        }
+    ')"
+    echo "${json:-[]}"
+}
+
+# ── Main metrics loop ────────────────────────────────────────────────────────
+
+# Poll system stats + player list and push to the egg-metrics API every interval.
+# Falls back to local-only logging when EGG_METRICS_URL is not set.
 start_metrics_loop() {
-    local interval="${SBOX_METRICS_INTERVAL:-300}"
-    local metrics_log="${LOG_DIR}/sbox-metrics.log"
-    local player_count=0
+    local interval="${EGG_METRICS_INTERVAL:-${SBOX_METRICS_INTERVAL:-30}}"
+
+    if [ -z "${EGG_METRICS_URL:-}" ]; then
+        log_warn "[egg-metrics] EGG_METRICS_URL not set; writing player counts to local log only"
+        _start_local_metrics_loop "$interval"
+        return
+    fi
+
+    local uuid
+    uuid="$(_get_server_uuid)"
+    local ingest_url="${EGG_METRICS_URL%/}/api/ingest"
+    # SERVER_IP / SERVER_PORT are Pterodactyl built-ins; combine into host:port.
+    local _ip="${SERVER_IP:-}"
+    [ -n "${SERVER_PORT:-}" ] && _ip="${_ip}:${SERVER_PORT}"
 
     (
-        # Wait for the server log to appear.
-        local waited=0
-        while [ ! -f "${SBOX_LOG}" ] && [ "${waited}" -lt 30 ]; do
-            sleep 1
-            waited=$((waited+1))
+        # Disable strict-mode inside this long-running background loop so that
+        # individual metric-read failures (e.g. grep returning 1 for no matches,
+        # a temporarily unavailable /proc file, etc.) do not kill the subshell.
+        set +eo pipefail
+
+        # Wait up to 60 s for the server log to appear before the first push.
+        waited=0
+        while [ ! -f "${SBOX_LOG}" ] && [ "$waited" -lt 60 ]; do
+            sleep 2; waited=$(( waited + 2 ))
         done
 
-        while true; do
-            sleep "${interval}"
-            [ -f "${SBOX_LOG}" ] || continue
+        prev_rx=0 prev_tx=0 first=1
 
-            # Count players by tallying connect/disconnect lines since boot.
-            local connects disconnects
-            connects=$(grep -c "is connected$" "${SBOX_LOG}" 2>/dev/null || echo 0)
+        while true; do
+            # _metrics_read_cpu sleeps 1 s internally; adjust the remaining wait.
+            sleep "$(( interval > 1 ? interval - 1 : interval ))"
+
+            # Send 'status' now; the 1 s CPU sleep below gives the server time
+            # to write the PLAYERS section to the log before we parse it.
+            _metrics_send_status_cmd || true
+
+            # ── system metrics ───────────────────────────────────────────────
+            cpu_raw="$(_metrics_read_cpu)"
+            cpu="$(( cpu_raw / 10 )).$(( cpu_raw % 10 ))"
+
+            read -r mem_used mem_max <<< "$(_metrics_read_memory)"
+            # SERVER_MEMORY is the Pterodactyl-allocated limit in MB; prefer it
+            # over the kernel-reported total which may reflect the whole host.
+            if [ -n "${SERVER_MEMORY:-}" ] && [ "${SERVER_MEMORY}" -gt 0 ] 2>/dev/null; then
+                mem_max=$(( SERVER_MEMORY * 1024 * 1024 ))
+            fi
+            read -r stor_used stor_max <<< "$(_metrics_read_storage)"
+            read -r cur_rx    cur_tx   <<< "$(_metrics_read_net)"
+
+            if [ "$first" -eq 1 ]; then
+                net_rx=0; net_tx=0; first=0
+            else
+                net_rx=$(( (cur_rx - prev_rx) / interval ))
+                net_tx=$(( (cur_tx - prev_tx) / interval ))
+                [ "$net_rx" -lt 0 ] && net_rx=0
+                [ "$net_tx" -lt 0 ] && net_tx=0
+            fi
+            prev_rx=$cur_rx; prev_tx=$cur_tx
+
+            # ── player list (status was sent above; parsed from log now) ──────
+            players_json="$(_metrics_parse_players "${SBOX_LOG}")"
+            # Use a brace group so grep's exit-1 (no matches) doesn't propagate
+            # as a pipeline failure and kill the loop under set -o pipefail.
+            player_count="$(printf '%s' "$players_json" | { grep -o '"identifier"' || true; } | wc -l)"
+
+            # ── POST to /api/ingest ──────────────────────────────────────────
+            mem_used_mb=$(( mem_used / 1024 / 1024 ))
+            stor_used_mb=$(( stor_used / 1024 / 1024 ))
+            ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            payload="$(printf '{
+  "server_uuid": "%s",
+  "game": "%s",
+  "ip": ["%s"],
+  "metrics": {
+    "cpu": %s,
+    "memory": %s,
+    "storage": %s,
+    "network_rx": %s,
+    "network_tx": %s,
+    "players": %s
+  },
+  "current_players": %s,
+  "timestamp": "%s",
+  "api_version": "1.0"
+}' \
+                "$uuid" "${EGG_METRICS_GAME:-sbox}" "$_ip" \
+                "$cpu" \
+                "$mem_used_mb" \
+                "$stor_used_mb" \
+                "$net_rx" "$net_tx" \
+                "$player_count" \
+                "$players_json" \
+                "$ts")"
+
+            _post_ok=0
+            if command -v curl > /dev/null 2>&1; then
+                curl -sf --connect-timeout 5 -X POST \
+                    -H "Content-Type: application/json" \
+                    -d "$payload" \
+                    "$ingest_url" > /dev/null 2>&1 && _post_ok=1 || true
+            else
+                wget -q -O /dev/null --timeout=5 \
+                    --header="Content-Type: application/json" \
+                    --post-data="$payload" \
+                    "$ingest_url" > /dev/null 2>&1 && _post_ok=1 || true
+            fi
+            if [ "$_post_ok" -eq 1 ]; then
+                log_info "[egg-metrics] cpu=${cpu}% mem=${mem_used_mb}MB net_rx=${net_rx}B/s players=${player_count}"
+            else
+                log_warn "[egg-metrics] failed to post metrics to ${ingest_url}"
+            fi
+        done
+    ) &
+}
+
+# Minimal fallback used when EGG_METRICS_URL is not configured.
+_start_local_metrics_loop() {
+    local interval="$1"
+    local metrics_log="${LOG_DIR}/sbox-metrics.log"
+    (
+        waited=0
+        while [ ! -f "${SBOX_LOG}" ] && [ "$waited" -lt 30 ]; do
+            sleep 1; waited=$(( waited + 1 ))
+        done
+        while true; do
+            sleep "$interval"
+            [ -f "${SBOX_LOG}" ] || continue
+            connects=$(grep -c "connected$" "${SBOX_LOG}" 2>/dev/null || echo 0)
             disconnects=$(grep -c "disconnected\|dropped\|timed out" "${SBOX_LOG}" 2>/dev/null || echo 0)
             player_count=$(( connects - disconnects ))
-            [ "${player_count}" -lt 0 ] && player_count=0
-
-            printf '[%s] METRICS: players_online=%d (connects=%d disconnects=%d)\n' \
-                "$(date '+%Y-%m-%d %H:%M:%S')" "${player_count}" "${connects}" "${disconnects}" \
-                | tee -a "${metrics_log}"
+            [ "$player_count" -lt 0 ] && player_count=0
+            printf '[%s] METRICS: players_online=%d\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" "$player_count" >> "$metrics_log"
         done
     ) &
 }
@@ -503,6 +858,10 @@ run_sbox() {
     fi
     log_info "Command: ${RUNTIME_MODE} \"${SBOX_SERVER_EXE}\" ${redacted_args[*]}"
 
+    # Register server and post the start event before handing off to the process.
+    egg_metrics_start
+    egg_metrics_event "start" "server_start" "S&Box server starting (runtime=${RUNTIME_MODE:-wine})"
+
     cd "${SBOX_INSTALL_DIR}"
 
     if [ "${RUNTIME_MODE}" = "proton" ]; then
@@ -519,16 +878,28 @@ run_sbox() {
     else # default to wine
         # S&Box writes its own logs to ${SBOX_INSTALL_DIR}/logs/sbox-server.log.
         # Pass wine stdout/stderr straight to the console with no extra pipe.
-        exec env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}"
+        # Not using exec so we can capture the exit code and post a stop/crash event.
+        #
+        # NOTE: wine uses GetConsoleMode()/isatty() to decide whether to process
+        # stdin as console input.  When stdin is a pipe or FIFO, wine's wineconserver
+        # stops accepting console commands — so wine MUST inherit the container PTY
+        # directly.  The PTY master is held by Docker and is not writable from within
+        # the container, so automatic command injection (e.g. 'status' for metrics)
+        # is not possible without elevated capabilities.  Users can type commands
+        # directly in the Pterodactyl/Pelican console as normal.
+        set +e
+        env "${launch_env[@]}" wine "${SBOX_SERVER_EXE}" "${args[@]}"
+        server_status=$?
+        set -e
     fi
-
-    # Unreachable for wine (exec above never returns).
-    # Retained for proton/linux paths that fall through.
 
     # Exit codes 130 (SIGINT/^C) and 143 (SIGTERM) are clean shutdowns, not errors.
     if [ "${server_status}" -ne 0 ] && [ "${server_status}" -ne 130 ] && [ "${server_status}" -ne 143 ]; then
         log_error "sbox-server exited with status ${server_status}"
         log_error "startup failed after launch command; inspect recent Wine output above for root cause"
+        egg_metrics_event "crash" "server_crash" "S&Box exited with non-zero status ${server_status}"
+    else
+        egg_metrics_event "stop" "server_stop" "S&Box server stopped cleanly (status=${server_status})"
     fi
 
     exit "${server_status}"
