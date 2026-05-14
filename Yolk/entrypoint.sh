@@ -496,11 +496,59 @@ _metrics_read_cpu() {
     echo $(( (dtotal - didle) * 1000 * ncpus / dtotal ))
 }
 
-# Returns "<used_bytes> <total_bytes>" from /proc/meminfo.
-# Prefers MemAvailable (kernel's own estimate of reclaimable memory) so that
-# page-cache is not counted as "used", matching what tools like `free` report.
+# Returns "<used_bytes> <total_bytes>" scoped to this container.
+# Reads cgroup memory files (accurate inside Docker/Pterodactyl containers).
+# Falls back to /proc/meminfo only when no cgroup files are present.
+#
+# Cgroup v2: memory.current / memory.max  (values already in bytes)
+# Cgroup v1: memory.usage_in_bytes / memory.limit_in_bytes minus total_cache
+# /proc/meminfo fallback: host-level, used as last resort only.
 _metrics_read_memory() {
-    local total=0 available=0 free=0 buffers=0 cached=0 sreclaimable=0 key val
+    local used=0 total=0
+
+    # ── cgroup v2 ────────────────────────────────────────────────────────────
+    if [ -f /sys/fs/cgroup/memory.current ]; then
+        used="$(cat /sys/fs/cgroup/memory.current 2>/dev/null)" || used=0
+        local _max_raw
+        _max_raw="$(cat /sys/fs/cgroup/memory.max 2>/dev/null)" || _max_raw="max"
+        # "max" means unlimited; treat as 0 (caller overrides with SERVER_MEMORY)
+        if [ "$_max_raw" = "max" ] || [ -z "$_max_raw" ]; then
+            total=0
+        else
+            total="$_max_raw"
+        fi
+        # Subtract inactive file cache — kernel considers it reclaimable
+        if [ -f /sys/fs/cgroup/memory.stat ]; then
+            local _inactive_file
+            _inactive_file="$(grep '^inactive_file ' /sys/fs/cgroup/memory.stat 2>/dev/null | awk '{print $2}')" || _inactive_file=0
+            used=$(( used - ${_inactive_file:-0} ))
+            [ "$used" -lt 0 ] && used=0
+        fi
+        echo "${used:-0} ${total:-0}"
+        return
+    fi
+
+    # ── cgroup v1 ────────────────────────────────────────────────────────────
+    if [ -f /sys/fs/cgroup/memory/memory.usage_in_bytes ]; then
+        used="$(cat /sys/fs/cgroup/memory/memory.usage_in_bytes 2>/dev/null)" || used=0
+        total="$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null)" || total=0
+        # Large sentinel value (≥ 1 TiB) means unlimited
+        if [ "${total:-0}" -gt $(( 1024 * 1024 * 1024 * 1024 )) ] 2>/dev/null; then
+            total=0
+        fi
+        # Subtract page cache (total_cache) — not actual RSS
+        if [ -f /sys/fs/cgroup/memory/memory.stat ]; then
+            local _cache
+            _cache="$(grep '^total_cache ' /sys/fs/cgroup/memory/memory.stat 2>/dev/null | awk '{print $2}')" || _cache=0
+            used=$(( used - ${_cache:-0} ))
+            [ "$used" -lt 0 ] && used=0
+        fi
+        echo "${used:-0} ${total:-0}"
+        return
+    fi
+
+    # ── /proc/meminfo fallback (host-scoped; inaccurate inside containers) ───
+    local available=0 free=0 buffers=0 cached=0 sreclaimable=0 key val
     while IFS=: read -r key val; do
         key="${key// /}"; val="${val//[^0-9]/}"
         case "$key" in
@@ -512,13 +560,13 @@ _metrics_read_memory() {
             SReclaimable) sreclaimable="$val" ;;
         esac
     done < /proc/meminfo
-    local used
     if [ "${available:-0}" -gt 0 ] 2>/dev/null; then
         used=$(( total - available ))
     else
         used=$(( total - free - buffers - cached - sreclaimable ))
     fi
     [ "${used:-0}" -lt 0 ] && used=0
+    # /proc/meminfo values are in kB; convert to bytes
     echo "$(( used * 1024 )) $(( total * 1024 ))"
 }
 
@@ -718,9 +766,9 @@ start_metrics_loop() {
                     "$ingest_url" > /dev/null 2>&1 && _post_ok=1 || true
             fi
             if [ "$_post_ok" -eq 1 ]; then
-                log_info "[egg-metrics] cpu=${cpu}% mem=${mem_used_mb}MB net_rx=${net_rx}B/s players=${player_count}"
+                #log_info "[egg-metrics] cpu=${cpu}% mem=${mem_used_mb}MB net_rx=${net_rx}B/s players=${player_count}"
             else
-                log_warn "[egg-metrics] failed to post metrics to ${ingest_url}"
+                #log_warn "[egg-metrics] failed to post metrics to ${ingest_url}"
             fi
         done
     ) &
