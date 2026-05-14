@@ -766,9 +766,9 @@ start_metrics_loop() {
                     "$ingest_url" > /dev/null 2>&1 && _post_ok=1 || true
             fi
             if [ "$_post_ok" -eq 1 ]; then
-                #log_info "[egg-metrics] cpu=${cpu}% mem=${mem_used_mb}MB net_rx=${net_rx}B/s players=${player_count}"
+                : #log_info "[egg-metrics] cpu=${cpu}% mem=${mem_used_mb}MB net_rx=${net_rx}B/s players=${player_count}"
             else
-                #log_warn "[egg-metrics] failed to post metrics to ${ingest_url}"
+                : #log_warn "[egg-metrics] failed to post metrics to ${ingest_url}"
             fi
         done
     ) &
