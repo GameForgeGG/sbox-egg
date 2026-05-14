@@ -478,22 +478,99 @@ egg_metrics_event() {
     egg_metrics_post "/api/ingest/event" "$payload"
 }
 
-# Sample /proc/stat over 1 s; returns CPU% × 10 (e.g. 1080 = 108.0%).
-# 100% = one thread fully utilised; multiplied by core count so the value
-# matches per-thread usage (same convention as Pterodactyl's panel graphs).
+# Collect all PIDs in the process tree rooted at $1 via a single awk pass
+# over /proc/[0-9]*/stat.  Handles comm names that contain spaces or parens.
+_proc_tree_pids() {
+    local root="$1"
+    awk -v root="$root" '
+    {
+        pid = $1
+        # Locate the closing ") " to extract ppid without being confused by
+        # spaces inside the comm field.
+        close_paren = index($0, ") ")
+        rest = substr($0, close_paren + 2)
+        split(rest, f, " ")
+        ppid = f[2]
+        children[ppid] = (ppid in children ? children[ppid] " " : "") pid
+    }
+    END {
+        n = 1; queue[1] = root
+        while (n > 0) {
+            p = queue[1]
+            for (i = 1; i < n; i++) queue[i] = queue[i+1]
+            delete queue[n]; n--
+            print p
+            if (p in children) {
+                cnt = split(children[p], ch)
+                for (i = 1; i <= cnt; i++) { n++; queue[n] = ch[i] }
+            }
+        }
+    }
+    ' /proc/[0-9]*/stat 2>/dev/null
+}
+
+# Sum utime+stime (fields 14+15 in /proc/pid/stat) for each PID argument.
+_sum_proc_ticks() {
+    local total=0 pid t
+    for pid in "$@"; do
+        [ -f "/proc/${pid}/stat" ] || continue
+        t="$(awk '{
+            close_paren = index($0, ") ")
+            rest = substr($0, close_paren + 2)
+            split(rest, f, " ")
+            print f[12] + f[13]
+        }' "/proc/${pid}/stat" 2>/dev/null)" || continue
+        total=$(( total + ${t:-0} ))
+    done
+    echo "$total"
+}
+
+# Sample wine process-tree CPU usage over 1 s; returns CPU% × 10
+# (e.g. 1080 = 108.0%).  Scoped to wine and all its descendants so that
+# activity in other containers does not pollute the reading.
+# Falls back to system-wide /proc/stat only when wine is not running yet.
 _metrics_read_cpu() {
-    local _u1 _n1 _s1 _i1 _io1 _u2 _n2 _s2 _i2 _io2
-    read -r _ _u1 _n1 _s1 _i1 _io1 _ _ < /proc/stat
+    local root_pid
+    root_pid="$(pgrep -x wine 2>/dev/null | head -1 || pgrep -x wine64 2>/dev/null | head -1 || true)"
+
+    # ── fallback: system-wide /proc/stat (server not started yet) ───────────
+    if [ -z "$root_pid" ]; then
+        local _u1 _n1 _s1 _i1 _io1 _u2 _n2 _s2 _i2 _io2
+        read -r _ _u1 _n1 _s1 _i1 _io1 _ _ < /proc/stat
+        sleep 1
+        read -r _ _u2 _n2 _s2 _i2 _io2 _ _ < /proc/stat
+        local total1=$(( _u1 + _n1 + _s1 + _i1 + _io1 ))
+        local total2=$(( _u2 + _n2 + _s2 + _i2 + _io2 ))
+        local dtotal=$(( total2 - total1 ))
+        local didle=$(( _i2 - _i1 ))
+        [ "$dtotal" -eq 0 ] && echo "0" && return
+        local ncpus
+        ncpus=$(grep -c '^cpu[0-9]' /proc/stat 2>/dev/null || echo 1)
+        echo $(( (dtotal - didle) * 1000 * ncpus / dtotal ))
+        return
+    fi
+
+    # ── wine process tree ────────────────────────────────────────────────────
+    local clk_tck
+    clk_tck="$(getconf CLK_TCK 2>/dev/null || echo 100)"
+
+    local -a tree_pids
+    mapfile -t tree_pids < <(_proc_tree_pids "$root_pid")
+
+    local ticks1 ticks2
+    ticks1="$(_sum_proc_ticks "${tree_pids[@]}")"
     sleep 1
-    read -r _ _u2 _n2 _s2 _i2 _io2 _ _ < /proc/stat
-    local total1=$(( _u1 + _n1 + _s1 + _i1 + _io1 ))
-    local total2=$(( _u2 + _n2 + _s2 + _i2 + _io2 ))
-    local dtotal=$(( total2 - total1 ))
-    local didle=$(( _i2 - _i1 ))
-    [ "$dtotal" -eq 0 ] && echo "0" && return
-    local ncpus
-    ncpus=$(grep -c '^cpu[0-9]' /proc/stat 2>/dev/null || echo 1)
-    echo $(( (dtotal - didle) * 1000 * ncpus / dtotal ))
+    # Refresh tree: short-lived wineserver threads may have spawned/exited.
+    mapfile -t tree_pids < <(_proc_tree_pids "$root_pid")
+    ticks2="$(_sum_proc_ticks "${tree_pids[@]}")"
+
+    local delta=$(( ticks2 - ticks1 ))
+    [ "$delta" -lt 0 ] && delta=0
+
+    # delta ticks / CLK_TCK = CPU-seconds consumed in the 1 s window.
+    # * 1000 → CPU% × 10 (same reporting unit as the /proc/stat fallback path):
+    # e.g. wine using 2 cores fully = 200 ticks → 2000 → reported as 200.0%.
+    echo $(( delta * 1000 / clk_tck ))
 }
 
 # Returns "<used_bytes> <total_bytes>" scoped to this container.
