@@ -35,6 +35,9 @@ SBOX_LOG="${SBOX_INSTALL_DIR}/logs/sbox-server.log"
 # Named FIFO used to inject commands into wine's stdin (created at server launch).
 # Both the Pterodactyl console relay and the metrics loop write to this path.
 SBOX_CMD_FIFO="${CONTAINER_HOME}/.sbox-cmd.fifo"
+# Flat file maintaining the live player roster (steamid<TAB>name, one per line).
+# Written by the log-watcher; read by the metrics loop.
+SBOX_PLAYERS_STATE="${CONTAINER_HOME}/.sbox-players.state"
 
 # ============================================================================
 # LOGGING FUNCTIONS
@@ -462,7 +465,7 @@ egg_metrics_start() {
         "$ts")"
 
     egg_metrics_post "/api/ingest/start" "$payload"
-    log_info "[egg-metrics] registered server ${uuid} with ${EGG_METRICS_URL}"
+    # log_info "[egg-metrics] registered server ${uuid} with ${EGG_METRICS_URL}"
 }
 
 # Post a lifecycle event (start / stop / crash).
@@ -680,54 +683,67 @@ _metrics_read_net() {
     echo "$rx $tx"
 }
 
-# Inject 'status' into the server's stdin via TIOCSTI (ioctl 0x5412).
-# TIOCSTI inserts bytes directly into the PTY's input queue, exactly as if
-# the operator typed them.  The 'ttyinject' binary (compiled in the image)
-# calls ioctl(0, TIOCSTI, &char) for each character of its argument.
+# Tail sbox-server.log and maintain a live player-roster state file.
 #
-# Requirements:
-#   - ttyinject must be present at /usr/local/bin/ttyinject (built in DockerFile)
-#   - fd 0 must be the container PTY slave (standard Pterodactyl/Pelican setup)
-#   - kernel dev.tty.legacy_tiocsti must be 1 (default on most hosts; restricted
-#     on explicitly hardened distros such as RHEL 9 / Fedora 38+)
-_metrics_send_status_cmd() {
-    command -v ttyinject > /dev/null 2>&1 || return 0
-    ttyinject 'status' 2>/dev/null || true
+# State file format: one tab-separated line per player: "steamid<TAB>name"
+# The state is reset to empty when "[Generic] Connected to Steam" is seen,
+# which signals a (re)start and makes the previous roster stale.
+#
+# Log patterns handled (all prefixed with the timestamp + [Generic]):
+#   "<Name> [<SteamID64>] is connected"   → player joined
+#   "<Name> [<SteamID64>] disconnected"   → player left
+#   "Connected to Steam"                  → server ready / roster reset
+#
+# Note: [SF] lines (gamemode scheduler) are ignored by the case match below.
+_start_player_watcher() {
+    local _state="${SBOX_PLAYERS_STATE}"
+    (
+        set +eo pipefail
+        : > "$_state"
+
+        # tail -n 0 -F: start from EOF, follow by name (waits for file creation,
+        # handles log rotation).
+        tail -n 0 -F "${SBOX_LOG}" 2>/dev/null | while IFS= read -r _pw_line; do
+            case "$_pw_line" in
+                *'[Generic] Connected to Steam'*)
+                    # Server (re)started — wipe the roster.
+                    : > "$_state"
+                    ;;
+                *'[Generic] '*)
+                    _pw_body="${_pw_line#*\[Generic\] }"
+                    if [[ "$_pw_body" =~ ^(.+)\ \[([0-9]+)\]\ is\ connected[[:space:]]*$ ]]; then
+                        _pw_name="${BASH_REMATCH[1]//	/ }"   # strip embedded tabs
+                        _pw_name="${_pw_name//|/}"             # strip pipe (delimiter safety)
+                        _pw_id="${BASH_REMATCH[2]}"
+                        _pw_tmp="${_state}.tmp"
+                        # Remove any stale entry for this SteamID (reconnect case).
+                        { grep -v "^${_pw_id}	" "$_state" 2>/dev/null || true; } > "$_pw_tmp"
+                        printf '%s\t%s\n' "$_pw_id" "$_pw_name" >> "$_pw_tmp"
+                        mv -f "$_pw_tmp" "$_state"
+                    elif [[ "$_pw_body" =~ ^(.+)\ \[([0-9]+)\]\ disconnected[[:space:]]*$ ]]; then
+                        _pw_id="${BASH_REMATCH[2]}"
+                        _pw_tmp="${_state}.tmp"
+                        { grep -v "^${_pw_id}	" "$_state" 2>/dev/null || true; } > "$_pw_tmp"
+                        mv -f "$_pw_tmp" "$_state"
+                    fi
+                    ;;
+            esac
+        done
+    ) &
 }
 
-# Parse the S&Box server log and return a JSON array of currently connected players.
-#
-# Reads the last "PLAYERS ----------" section written by the `status` command.
-# Actual player line format (whitespace-separated fields):
-#   HH:MM:SS  Generic  UUID  SteamID64  State  DisplayName...  M/D/YYYY  H:MM:SS  AM/PM  +TZ
-# 'State' is e.g. 'Welcome' (joining) or 'Connected' — not a fixed string.
-_metrics_parse_players() {
-    local log_file="$1"
-    [ -f "$log_file" ] || { echo "[]"; return; }
-
-    # Only scan the last 300 lines so the awk stays fast on long-running servers.
-    local json
-    json="$(tail -n 300 "$log_file" | awk '
-        /PLAYERS[[:space:]]+-+/ { in_s=1; n=0; delete sid; delete nm; next }
-        in_s && NF >= 10 &&
-            $4 ~ /^[0-9]+$/ && length($4) >= 10 &&
-            $3 ~ /^[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-/ {
-            steamid = $4
-            name = ""
-            for (i = 6; i <= NF-4; i++) name = name (i>6 ? " " : "") $i
+# Read the state file and return a JSON array of current players.
+_metrics_read_players() {
+    local _state="${SBOX_PLAYERS_STATE}"
+    [ -f "$_state" ] || { printf '[]'; return; }
+    awk -F'\t' '
+        NF == 2 {
+            id = $1; name = $2
             gsub(/"/, "\\\"", name)
-            sid[n] = steamid; nm[n] = name; n++
+            printf "%s{\"identifier\":\"%s\",\"display_name\":\"%s\"}", (n++ ? "," : "["), id, name
         }
-        END {
-            printf "["
-            for (i=0; i<n; i++) {
-                if (i>0) printf ","
-                printf "{\"identifier\":\"%s\",\"display_name\":\"%s\"}", sid[i], nm[i]
-            }
-            printf "]"
-        }
-    ')"
-    echo "${json:-[]}"
+        END { if (n == 0) printf "[]"; else printf "]" }
+    ' "$_state"
 }
 
 # ── Main metrics loop ────────────────────────────────────────────────────────
@@ -750,6 +766,9 @@ start_metrics_loop() {
     local _ip="${SERVER_IP:-}"
     [ -n "${SERVER_PORT:-}" ] && _ip="${_ip}:${SERVER_PORT}"
 
+    # Start the log-watcher that maintains the live player roster.
+    _start_player_watcher
+
     (
         # Disable strict-mode inside this long-running background loop so that
         # individual metric-read failures (e.g. grep returning 1 for no matches,
@@ -767,10 +786,6 @@ start_metrics_loop() {
         while true; do
             # _metrics_read_cpu sleeps 1 s internally; adjust the remaining wait.
             sleep "$(( interval > 1 ? interval - 1 : interval ))"
-
-            # Send 'status' now; the 1 s CPU sleep below gives the server time
-            # to write the PLAYERS section to the log before we parse it.
-            _metrics_send_status_cmd || true
 
             # ── system metrics ───────────────────────────────────────────────
             cpu_raw="$(_metrics_read_cpu)"
@@ -795,11 +810,9 @@ start_metrics_loop() {
             fi
             prev_rx=$cur_rx; prev_tx=$cur_tx
 
-            # ── player list (status was sent above; parsed from log now) ──────
-            players_json="$(_metrics_parse_players "${SBOX_LOG}")"
-            # Use a brace group so grep's exit-1 (no matches) doesn't propagate
-            # as a pipeline failure and kill the loop under set -o pipefail.
-            player_count="$(printf '%s' "$players_json" | { grep -o '"identifier"' || true; } | wc -l)"
+            # ── player list (maintained by _start_player_watcher) ────────────
+            players_json="$(_metrics_read_players)"
+            player_count="$({ wc -l < "${SBOX_PLAYERS_STATE}" 2>/dev/null || echo 0; } | tr -d ' ')"
 
             # ── POST to /api/ingest ──────────────────────────────────────────
             mem_used_mb=$(( mem_used / 1024 / 1024 ))
@@ -855,6 +868,7 @@ start_metrics_loop() {
 _start_local_metrics_loop() {
     local interval="$1"
     local metrics_log="${LOG_DIR}/sbox-metrics.log"
+    _start_player_watcher
     (
         waited=0
         while [ ! -f "${SBOX_LOG}" ] && [ "$waited" -lt 30 ]; do
@@ -863,10 +877,7 @@ _start_local_metrics_loop() {
         while true; do
             sleep "$interval"
             [ -f "${SBOX_LOG}" ] || continue
-            connects=$(grep -c "connected$" "${SBOX_LOG}" 2>/dev/null || echo 0)
-            disconnects=$(grep -c "disconnected\|dropped\|timed out" "${SBOX_LOG}" 2>/dev/null || echo 0)
-            player_count=$(( connects - disconnects ))
-            [ "$player_count" -lt 0 ] && player_count=0
+            player_count="$({ wc -l < "${SBOX_PLAYERS_STATE}" 2>/dev/null || echo 0; } | tr -d ' ')"
             printf '[%s] METRICS: players_online=%d\n' \
                 "$(date '+%Y-%m-%d %H:%M:%S')" "$player_count" >> "$metrics_log"
         done
