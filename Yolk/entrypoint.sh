@@ -523,18 +523,20 @@ _metrics_read_memory() {
 }
 
 # Returns "<used_bytes> <total_bytes>" for the container home directory.
-# Uses -B1 (POSIX/busybox-compatible) rather than --block-size=1 (GNU-only).
+# used  = actual bytes consumed by files inside /home/container (via du).
+# total = total capacity of the underlying filesystem (via df -B1).
 _metrics_read_storage() {
+    local used=0 total=0 df_line
+    if command -v du &>/dev/null; then
+        used="$(du -sb "${CONTAINER_HOME}" 2>/dev/null | awk '{print $1}')" || used=0
+    fi
     if command -v df &>/dev/null; then
-        local used=0 total=0 df_line
         df_line="$(df -B1 "${CONTAINER_HOME}" 2>/dev/null | tail -1)" || df_line=""
         if [ -n "$df_line" ]; then
-            read -r _ total used _ _ _ <<< "$df_line" || true
+            read -r _ total _ _ _ _ <<< "$df_line" || true
         fi
-        echo "${used:-0} ${total:-0}"
-    else
-        echo "0 0"
     fi
+    echo "${used:-0} ${total:-0}"
 }
 
 # Returns "<rx_bytes> <tx_bytes>" cumulative for all non-loopback interfaces.
