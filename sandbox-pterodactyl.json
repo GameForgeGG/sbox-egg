@@ -9,7 +9,7 @@
     "description": "s&box dedicated server using a custom runtime image with baked Wine + Windows .NET.",
     "features": [],
     "docker_images": {
-        "ghcr.io\/gameforgegg\/sbox-egg:latest": "ghcr.io\/gameforgegg\/sbox-egg:latest"
+        "ghcr.io/gameforgegg/sbox-egg:latest": "ghcr.io/gameforgegg/sbox-egg:latest"
     },
     "file_denylist": [],
     "startup": "start-sbox",
@@ -21,7 +21,7 @@
     },
     "scripts": {
         "installation": {
-            "script": "#!/bin/bash\nmkdir -p /mnt/server\n",
+            "script": "#!/bin/sh\nset -e\n\napk add --no-cache curl tar bash libstdc++ libc6-compat\n\nmkdir -p /mnt/server/.local/share/Steam/steamcmd\ncd /mnt/server/.local/share/Steam/steamcmd\n\ncurl -sqL \"https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\" -o steamcmd_linux.tar.gz\ntar -xzf steamcmd_linux.tar.gz\nrm steamcmd_linux.tar.gz\n\nchmod +x /mnt/server/.local/share/Steam/steamcmd/steamcmd.sh\n\nmkdir -p /mnt/server/sbox\n\necho \"SteamCMD installed\"\necho \"s&box server directory created\"\n",
             "container": "alpine:3",
             "entrypoint": "sh"
         }
@@ -89,7 +89,7 @@
         },
         {
             "name": "Auto Update",
-                "description": "Run a SteamCMD update check on every container boot to keep the server up to date (1=enabled, 0=disabled).",
+            "description": "Run a SteamCMD update check on every container boot to keep the server up to date (1=enabled, 0=disabled).",
             "env_variable": "SBOX_AUTO_UPDATE",
             "default_value": "1",
             "user_viewable": true,
@@ -118,7 +118,7 @@
         },
         {
             "name": "Game Server Token",
-            "description": "Optional Steam game server token passed as +net_game_server_token, get your token here: https:\/\/steamcommunity.com\/dev\/managegameservers",
+            "description": "Optional Steam game server token passed as +net_game_server_token, get your token here: https://steamcommunity.com/dev/managegameservers",
             "env_variable": "TOKEN",
             "default_value": "",
             "user_viewable": false,
