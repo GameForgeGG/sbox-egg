@@ -1,6 +1,6 @@
 # GameForge s&box Egg
 
-This repository contains Pterodactyl and Pelican eggs and container build assets for running an s&box dedicated server with Wine on Linux. (Native Linux will be added once facepunch add it to a steam depot.)
+This repository contains Pterodactyl and Pelican eggs and container build assets for running an s&box dedicated server with Wine on Linux. It also includes an opt-in native Linux Pterodactyl egg built from a pinned `Facepunch/sbox-public` commit while a stable native Steam depot is unavailable.
 
 This is working in production. We use it to offer s&box server hosting: [Looking for a server?](https://gameforge.gg/games/sbox)
 
@@ -16,12 +16,15 @@ Provides a production-ready egg that:
 
 - `sandbox-pterodactyl.json` — Pterodactyl egg export.
 - `sandbox-pelican.json` — Pelican egg export.
+- `sandbox-pterodactyl-linux-native.json` — validated, commit-pinned native Linux alternative.
+- `sandbox-pterodactyl-wine-managed.json` — validated managed-console Wine alternative.
+- `VALIDATED_EGGS.md` — image pins, deployment requirements, and panel/client acceptance results.
 - `Yolk/Dockerfile` — Docker image build.
 - `Yolk/entrypoint.sh` — Runtime startup and orchestration logic.
 
 ## Egg Focus
 
-Both egg files are functionally identical — they share the same Docker image, startup command, variables, and runtime behavior.
+The primary Pterodactyl and Pelican egg files are functionally identical — they share the same Docker image, startup command, variables, and runtime behavior. The two additional Pterodactyl imports use separately validated Sacred Servers images and do not change the primary GameForge runtime.
 
 Key details:
 - Startup command: `start-sbox`
@@ -58,6 +61,8 @@ If SteamCMD times out or fails but a previous `sbox-server.exe` exists, startup 
 2. Set the Docker image to `ghcr.io/GameForgeGG/sbox-egg:latest` (or your own build).
 3. Create a server and configure variables.
 4. Start the server. On first boot it will seed files and run the updater before launching.
+
+For the native public-source or managed-console Wine alternatives, import the matching `sandbox-pterodactyl-*.json` file and follow [`VALIDATED_EGGS.md`](VALIDATED_EGGS.md). Both alternatives require separate UDP game and query allocations.
 
 ## Notes for Hosting Providers
 

@@ -1,0 +1,38 @@
+{
+  "_comment": "DO NOT EDIT: generated for Pterodactyl Panel egg import",
+  "meta": { "version": "PTDL_v2", "update_url": null },
+  "exported_at": "2026-08-21T21:10:00-04:00",
+  "name": "sbox Dedicated Server - Native Linux Public Build",
+  "author": "Dopamine-Sbox",
+  "description": "Commit-pinned native Linux s&box dedicated server built from Facepunch/sbox-public. Installs the matching game artifacts into the server volume.",
+  "features": [],
+  "docker_images": { "Native Linux public 70647f9 stop fix 1": "sacredservers/sbox-dedicated-native:public-70647f9-stopfix1" },
+  "file_denylist": [],
+  "startup": "start-sbox",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\":\"Connected to Steam\"}",
+    "logs": "{}",
+    "stop": "quit"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/bash\nset -euo pipefail\ncommit=\"${SBOX_PUBLIC_COMMIT:-70647f994acb16cf780654dcfe3b5fee738a9f15}\"\nwork=/mnt/server/.install-sbox-public\ntarget=/mnt/server/serverfiles\napt-get update\nDEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git\nrm -rf \"${work}\"\ngit clone --filter=blob:none https://github.com/Facepunch/sbox-public.git \"${work}\"\ngit -C \"${work}\" checkout --detach \"${commit}\"\n(cd \"${work}\" && dotnet run --project engine/Tools/SboxBuild/SboxBuild.csproj -- build --config Developer)\ntest -x \"${work}/game/sbox-server\"\nif [ -d \"${target}/config\" ]; then mv \"${target}/config\" /mnt/server/.sbox-config-preserved; fi\nrm -rf \"${target}\"\nmv \"${work}/game\" \"${target}\"\nif [ -d /mnt/server/.sbox-config-preserved ]; then rm -rf \"${target}/config\"; mv /mnt/server/.sbox-config-preserved \"${target}/config\"; fi\nprintf '%s\\n' \"${commit}\" > \"${target}/.sbox-public-commit\"\nrm -rf \"${work}\"\nchmod +x \"${target}/sbox-server\"\necho \"Installed sbox-public ${commit}\"\n",
+      "container": "mcr.microsoft.com/dotnet/sdk:10.0",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    { "name": "Game package and map", "description": "Package identifier followed by the map or scene.", "env_variable": "GAME", "default_value": "facepunch.sandbox facepunch.flatgrass", "user_viewable": true, "user_editable": true, "rules": "required|string|max:160", "field_type": "text" },
+    { "name": "Server name", "description": "Name reported by the server.", "env_variable": "SERVER_NAME", "default_value": "sbox native dedicated", "user_viewable": true, "user_editable": true, "rules": "required|string|max:80", "field_type": "text" },
+    { "name": "Game port override", "description": "Leave empty to use the primary allocation automatically.", "env_variable": "PORT", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|integer|between:1024,65535", "field_type": "text" },
+    { "name": "Query port", "description": "A separately allocated UDP query port.", "env_variable": "QUERY_PORT", "default_value": "27016", "user_viewable": true, "user_editable": true, "rules": "required|integer|between:1024,65535", "field_type": "text" },
+    { "name": "Direct connect visibility", "description": "Use 1 to expose the address or 0 to disable.", "env_variable": "ENABLE_DIRECT_CONNECT", "default_value": "1", "user_viewable": true, "user_editable": true, "rules": "required|boolean", "field_type": "text" },
+    { "name": "Game server token", "description": "Optional private game server token.", "env_variable": "TOKEN", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:256", "field_type": "text" },
+    { "name": "Additional launch arguments", "description": "Optional additional command-line arguments.", "env_variable": "SBOX_EXTRA_ARGS", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:500", "field_type": "text" },
+    { "name": "Startup console commands", "description": "Optional semicolon-separated s&box console commands; not shell commands.", "env_variable": "SBOX_STARTUP_CONSOLE_COMMANDS", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:1000", "field_type": "text" },
+    { "name": "Startup command delay", "description": "Seconds before startup console commands are sent.", "env_variable": "SBOX_STARTUP_COMMAND_DELAY", "default_value": "30", "user_viewable": true, "user_editable": true, "rules": "required|integer|between:1,300", "field_type": "text" },
+    { "name": "Installed public source commit", "description": "Exact public source commit installed by this egg.", "env_variable": "SBOX_PUBLIC_COMMIT", "default_value": "70647f994acb16cf780654dcfe3b5fee738a9f15", "user_viewable": true, "user_editable": false, "rules": "required|string|size:40", "field_type": "text" },
+    { "name": "Public game directory", "description": "Internal runtime path populated by the installer.", "env_variable": "SBOX_PUBLIC_GAME_DIR", "default_value": "/home/container/serverfiles", "user_viewable": false, "user_editable": false, "rules": "required|string", "field_type": "text" }
+  ]
+}

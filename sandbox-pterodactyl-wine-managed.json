@@ -1,0 +1,40 @@
+{
+  "_comment": "DO NOT EDIT: generated for Pterodactyl Panel egg import",
+  "meta": { "version": "PTDL_v2", "update_url": null },
+  "exported_at": "2026-08-21T21:10:00-04:00",
+  "name": "sbox Dedicated Server - Wine (Managed Console)",
+  "author": "Dopamine-Sbox",
+  "description": "Windows s&box dedicated server under Wine. Verified with real Steam client joins, public A2S_INFO, and clean console quit.",
+  "features": [],
+  "docker_images": { "Wine validated 2026-08-22": "sacredservers/sbox-dedicated-wine:validated-20260822" },
+  "file_denylist": [],
+  "startup": "start-sbox",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\":\"Connected to Steam\"}",
+    "logs": "{}",
+    "stop": "quit"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/sh\necho 'The Wine runtime installs and updates s&box through SteamCMD on startup.'\n",
+      "container": "alpine:3",
+      "entrypoint": "sh"
+    }
+  },
+  "variables": [
+    { "name": "Game package and map", "description": "Package identifier and optional map or scene.", "env_variable": "GAME", "default_value": "facepunch.sandbox facepunch.flatgrass", "user_viewable": true, "user_editable": true, "rules": "required|string|max:160", "field_type": "text" },
+    { "name": "Server name", "description": "Name shown for the dedicated server.", "env_variable": "SERVER_NAME", "default_value": "sbox wine dedicated", "user_viewable": true, "user_editable": true, "rules": "required|string|max:80", "field_type": "text" },
+    { "name": "Game port override", "description": "Leave empty to use the primary allocation automatically.", "env_variable": "PORT", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|integer|between:1024,65535", "field_type": "text" },
+    { "name": "Query port", "description": "Separately allocated UDP port for A2S_INFO queries.", "env_variable": "QUERY_PORT", "default_value": "27016", "user_viewable": true, "user_editable": true, "rules": "required|integer|between:1024,65535", "field_type": "text" },
+    { "name": "Automatic Steam update", "description": "Use 1 to update on every start or 0 to retain the installed build.", "env_variable": "SBOX_AUTO_UPDATE", "default_value": "0", "user_viewable": true, "user_editable": true, "rules": "required|boolean", "field_type": "text" },
+    { "name": "Direct connect visibility", "description": "Use 1 to expose the address or 0 to disable.", "env_variable": "ENABLE_DIRECT_CONNECT", "default_value": "1", "user_viewable": true, "user_editable": true, "rules": "required|boolean", "field_type": "text" },
+    { "name": "Game server token", "description": "Optional private game server token.", "env_variable": "TOKEN", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:256", "field_type": "text" },
+    { "name": "Additional launch arguments", "description": "Optional additional command-line arguments.", "env_variable": "SBOX_EXTRA_ARGS", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:500", "field_type": "text" },
+    { "name": "Startup console commands", "description": "Optional semicolon-separated s&box console commands; not shell commands.", "env_variable": "SBOX_STARTUP_CONSOLE_COMMANDS", "default_value": "", "user_viewable": true, "user_editable": true, "rules": "nullable|string|max:1000", "field_type": "text" },
+    { "name": "Startup command delay", "description": "Seconds before startup console commands are sent.", "env_variable": "SBOX_STARTUP_COMMAND_DELAY", "default_value": "30", "user_viewable": true, "user_editable": true, "rules": "required|integer|between:1,300", "field_type": "text" },
+    { "name": "Wine IPv4 compatibility", "description": "Required by the verified Wine path.", "env_variable": "SBOX_WINE_IPV4_ONLY", "default_value": "1", "user_viewable": true, "user_editable": false, "rules": "required|boolean", "field_type": "text" },
+    { "name": "Managed Wine console", "description": "Internal lifecycle setting for console quit.", "env_variable": "SBOX_WINE_CONSOLE_MODE", "default_value": "managed", "user_viewable": false, "user_editable": false, "rules": "required|string|in:managed", "field_type": "text" },
+    { "name": "Explicit game port argument", "description": "Internal allocation compatibility flag.", "env_variable": "SBOX_ENABLE_PORT_ARG", "default_value": "1", "user_viewable": false, "user_editable": false, "rules": "required|boolean", "field_type": "text" }
+  ]
+}
