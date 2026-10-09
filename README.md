@@ -1,69 +1,59 @@
-# GameForge s&box Egg
+# GameForge s&box Eggs
 
-This repository contains Pterodactyl and Pelican eggs and container build assets for running an s&box dedicated server with Wine on Linux. It also includes an opt-in native Linux Pterodactyl egg built from a pinned `Facepunch/sbox-public` commit while a stable native Steam depot is unavailable.
-
-This is working in production. We use it to offer s&box server hosting: [Looking for a server?](https://gameforge.gg/games/sbox)
-
-## Primary Goal
-
-Provides a production-ready egg that:
-- provides ease of use variables for the server.
-- runs as non-root in container environments.
-- runs SteamCMD on every boot to keep the server up to date.
-- A single stage runtime image based on `steamcmd/steamcmd:alpine` that uses steamcmd to download and keep sbox updated.
+This repository contains Pterodactyl and Pelican eggs for running s&box dedicated servers on Linux using Wine. It also includes an alternative native Linux egg built from Facepunch's public source and a managed-console Wine egg.
 
 ## Repository Layout
 
-- `sandbox-pterodactyl.json` — Pterodactyl egg export.
-- `sandbox-pelican.json` — Pelican egg export.
-- `sandbox-pterodactyl-linux-native.json` — validated, commit-pinned native Linux alternative.
-- `sandbox-pterodactyl-wine-managed.json` — validated managed-console Wine alternative.
-- `VALIDATED_EGGS.md` — image pins, deployment requirements, and panel/client acceptance results.
-- `Yolk/Dockerfile` — Docker image build.
-- `Yolk/entrypoint.sh` — Runtime startup and orchestration logic.
+* `sandbox-pterodactyl-wine-managed.json` — Wine with a managed console that accepts panel commands.
+* `sandbox-pterodactyl-linux-native.json` — Native Linux alternative built from pinned public source.
+* `Yolk/Dockerfile` — Docker image build.
+* `Yolk/entrypoint.sh` — runtime startup and orchestration logic.
 
-## Egg Focus
+### Primary Egg
+`sandbox-pterodactyl-wine-managed.json` runs the Windows dedicated server under Wine with a managed console that accepts commands from the panel.
 
-The primary Pterodactyl and Pelican egg files are functionally identical — they share the same Docker image, startup command, variables, and runtime behavior. The two additional Pterodactyl imports use separately validated Sacred Servers images and do not change the primary GameForge runtime.
+### Native Linux
+`sandbox-pterodactyl-linux-native.json` builds and installs Facepunch's public Linux source at the pinned commit:
+`70647f994acb16cf780654dcfe3b5fee738a9f15`
 
-Key details:
-- Startup command: `start-sbox`
-- Done detection: `Loading game|Server started` (This triggers when sbox finishes loading rather than when the game mode loading)`
+The initial installation compiles the source and may take several minutes on a fresh volume.
 
 ## Panel Variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `GAME` | Primary game package (`+game`) | `strikeforce.strikeforce` |
-| `SERVER_NAME` | Public server name | `Sandbox Server` |
-| `MAP` | Optional map/package identifier | `Empty` |
-| `SBOX_PROJECT` | Local `.sbproj` under `/home/container/projects/` | |
-| `SBOX_EXTRA_ARGS` | Extra launch arguments | |
-| `SBOX_AUTO_UPDATE` | Run SteamCMD update on each boot (`0`/`1`) | `1` |
-| `SBOX_BRANCH` | Steam beta branch for updates (e.g. `staging`) | |
-| `TOKEN` | Steam game server token | |
-| `STEAMCMD_EXTRA_ARGS` | Extra Args for SteamCMD | |
+| Variable              | Description                                       | Default                   |
+| --------------------- | ------------------------------------------------- | ------------------------- |
+| `GAME`                | Game package identifier (`+game`)                 | `strikeforce.strikeforce` |
+| `SERVER_NAME`         | Public server name                                | `Sandbox Server`          |
+| `MAP`                 | Optional map or package identifier                | `Empty`                   |
+| `SBOX_PROJECT`        | Local `.sbproj` under `/home/container/projects/` |                           |
+| `SBOX_EXTRA_ARGS`     | Additional launch arguments                       |                           |
+| `SBOX_AUTO_UPDATE`    | Run SteamCMD updates on each boot (`0`/`1`)       | `1`                       |
+| `SBOX_BRANCH`         | Steam beta branch, such as `staging`              |                           |
+| `TOKEN`               | Steam game server token                           |                           |
+| `STEAMCMD_EXTRA_ARGS` | Additional SteamCMD arguments                     |                           |
 
-## Runtime Behavior
+Available variables depend on the selected egg.
 
-At container start, `Yolk/entrypoint.sh`:
-1. SteamCMD will validate and update s&box as required into `/home/container/sbox`.
-2. Launches `sbox-server.exe` under Wine with the configured arguments.
-3. Logs into `/home/container/logs`
+The eggs do not expose an arbitrary shell command or a package-install-on-start variable. Use `GAME` to select the game or package. Optional startup values are s&box console commands, not shell commands.
 
-If SteamCMD times out or fails but a previous `sbox-server.exe` exists, startup continues with existing files and the updater error is logged to `logs/sbox-update.log`.
+## Networking and Shutdown
+
+The alternative eggs require separate UDP allocations for the game and query ports.
+
+* Leave `PORT` blank to use the server's primary Pterodactyl allocation automatically.
+* Set `QUERY_PORT` to the separately allocated UDP query port.
+* Normal panel shutdown sends `quit`; use Kill only for recovery.
 
 ## Quick Start
 
 1. Import the appropriate egg into your panel:
-  - **Pterodactyl**: import `sandbox-pterodactyl.json`
-  - **Pelican**: import `sandbox-pelican.json`
-2. Set the Docker image to `ghcr.io/GameForgeGG/sbox-egg:latest` (or your own build).
-3. Create a server and configure variables.
-4. Start the server. On first boot it will seed files and run the updater before launching.
 
-For the native public-source or managed-console Wine alternatives, import the matching `sandbox-pterodactyl-*.json` file and follow [`VALIDATED_EGGS.md`](VALIDATED_EGGS.md). Both alternatives require separate UDP game and query allocations.
+   * **Pterodactyl:** import the relevant `sandbox-pterodactyl-*.json` file.
+   * **Pelican:** import the relevent `sandbox-pelican-*.json` file.
+2. Configure the Docker image for the selected egg.
+3. Create a server and configure its variables and allocations.
+4. Start the server. On first boot, the primary Wine egg downloads and updates the game files before launching.
 
-## Notes for Hosting Providers
+## Hosting Providers
 
-While this egg was built for [GameForge](https://gameforge.gg) to sell s&box hosting, we are happy to see other providers use it and welcome pull requests.
+This repository was built for [GameForge](https://gameforge.gg/games/sbox) to provide s&box server hosting. Other providers are welcome to use it and contribute improvements.
